@@ -1,7 +1,13 @@
-# ---- Görüntü / barkod ----
+# ---- Görüntü / barkod / OCR ----
 opencv-python-headless==4.10.0.84
 pyzbar==0.1.9
 numpy==1.26.4
+# OCR: etiketteki #sipariş-no'yu okur (sistem bağımlılığı: tesseract-ocr, bkz Dockerfile)
+pytesseract==0.3.13
+# NOT: PaddleOCR (paddlepaddle+paddleocr) Dockerfile'da en sona kurulur — opencv
+# çakışmasını yönetmek için (paddle opencv 4.6 çeker, headless 4.10 tekrar pinlenir).
+# YOLO (torch+ultralytics) opsiyoneldir; yolo_barcode.py kodu durur ama Dockerfile'da
+# kurulmaz (bu kurulumda barkod okunamadı). GPU'lu kurulumda eklenebilir.
 
 # ---- HTTP / config ----
 requests==2.32.3

@@ -184,6 +184,78 @@ def test_log_packing_event_full_flow(client, monkeypatch):
     assert "Masa 3" in note_call["note"]
 
 
+def test_to_order_gid():
+    assert ShopifyClient.to_order_gid("7137311942243") == "gid://shopify/Order/7137311942243"
+    assert ShopifyClient.to_order_gid("#7137311942243") == "gid://shopify/Order/7137311942243"
+    # zaten gid ise dokunma
+    assert ShopifyClient.to_order_gid("gid://shopify/Order/55") == "gid://shopify/Order/55"
+
+
+def test_find_order_by_id(client, monkeypatch):
+    captured = {}
+
+    def fake_graphql(query, variables, **k):
+        captured["q"] = query
+        captured["v"] = variables
+        return {"order": {"id": "gid://shopify/Order/7137311942243", "name": "#939146", "note": ""}}
+
+    monkeypatch.setattr(client, "_graphql", fake_graphql)
+    order = client.find_order_by_id("7137311942243")
+    assert order["name"] == "#939146"
+    assert "getOrder" in captured["q"]  # ID sorgusu kullanıldı
+    assert captured["v"]["id"] == "gid://shopify/Order/7137311942243"
+
+
+def test_find_order_by_id_none(client, monkeypatch):
+    monkeypatch.setattr(client, "_graphql", lambda *a, **k: {"order": None})
+    assert client.find_order_by_id("9999999999") is None
+
+
+def test_log_packing_event_by_id_uses_real_name_in_note(client, monkeypatch):
+    """lookup='id': barkod ID ile sipariş çekilir, notta order NAME görünür (ID değil)."""
+    calls = []
+
+    def fake_graphql(query, variables, **k):
+        calls.append((query, variables))
+        if "getOrder" in query:
+            return {
+                "order": {"id": "gid://shopify/Order/7137311942243", "name": "#939146", "note": ""}
+            }
+        if "updateNote" in query:
+            return {"orderUpdate": {"order": {"id": "gid://7137311942243"}, "userErrors": []}}
+        if "setMetafield" in query:
+            return {"metafieldsSet": {"metafields": [{"id": "m1"}], "userErrors": []}}
+        return {}
+
+    monkeypatch.setattr(client, "_graphql", fake_graphql)
+    gid = client.log_packing_event(
+        order_no="7137311942243",
+        camera_id=1,
+        camera_name="Masa 1",
+        timestamp=datetime(2026, 6, 8, 15, 18, 35),
+        note_template="📦 [{timestamp}] {camera_name}: {order_no}",
+        lookup="id",
+    )
+    assert gid == "gid://shopify/Order/7137311942243"
+    note_call = next(v for q, v in calls if "updateNote" in q)
+    # Notta barkod ID değil, gerçek order name (#939146) yazılmalı
+    assert "#939146" in note_call["note"]
+    assert "7137311942243" not in note_call["note"]
+
+
+def test_log_packing_event_by_id_not_found(client, monkeypatch):
+    monkeypatch.setattr(client, "_graphql", lambda *a, **k: {"order": None})
+    with pytest.raises(OrderNotFound):
+        client.log_packing_event(
+            order_no="9999999999",
+            camera_id=1,
+            camera_name="Masa 1",
+            timestamp=datetime(2026, 6, 8, 15, 18, 35),
+            note_template="📦 {order_no}",
+            lookup="id",
+        )
+
+
 def test_throttle_wait_calc():
     body = {
         "extensions": {

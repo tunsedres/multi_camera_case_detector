@@ -26,8 +26,8 @@ import numpy as np
 
 from app import __version__
 from app.camera_worker import CameraWorker
-from app.config import AppConfig, load_config
-from app.detection.barcode import BarcodeResult
+from app.config import AppConfig, load_config, resolve_camera
+from app.detection.types import BarcodeResult
 from app.integrations.shopify_client import ShopifyClient
 from app.licensing import LicenseManager, LicenseStatus
 from app.logger import setup_logger
@@ -58,11 +58,22 @@ class Application:
         self._workers: list[threading.Thread] = []
 
     # ------------------------------------------------------------------ #
+    #  Kameralar (SQLite'tan; RTSP {user}/{pass} .env ile doldurulur)
+    # ------------------------------------------------------------------ #
+    def _load_cameras(self) -> list:
+        """DB'deki kameraları çalıştırılabilir CameraConfig listesine çevirir."""
+        return [resolve_camera(row, self.settings) for row in self.db.list_cameras()]
+
+    @staticmethod
+    def _enabled(cameras: list) -> list:
+        return [c for c in cameras if c.enabled]
+
+    # ------------------------------------------------------------------ #
     #  Lisans
     # ------------------------------------------------------------------ #
     def _evaluate_license(self) -> LicenseStatus:
         key = self.settings.resolve_license_key()
-        active = len(self.config.enabled_cameras)
+        active = len(self._enabled(self._load_cameras()))
         status, lic = self.license_manager.evaluate(key, active_cameras=active)
 
         health = LicenseHealth(status=status.value)
@@ -106,9 +117,11 @@ class Application:
         timestamp: datetime,
     ):
         order_no = result.normalized
-        window = self.config.detection.dedup_window_seconds
-        if self.db.is_duplicate(order_no, camera_id, window):
-            self.logger.debug("[Cam %s] Dedup: %s", camera_id, order_no)
+        det = self.config.detection
+        if self.db.is_duplicate(order_no, camera_id, det.dedup_window_seconds, mode=det.dedup_mode):
+            self.logger.debug(
+                "[Cam %s] Dedup (%s): %s zaten yazıldı", camera_id, det.dedup_mode, order_no
+            )
             return
 
         snapshot_path = self.snapshots.save(frame, camera_id, order_no, timestamp)
@@ -127,10 +140,25 @@ class Application:
     #  Kurulum
     # ------------------------------------------------------------------ #
     def _build_workers(self):
-        active = self.config.enabled_cameras
+        active = self._enabled(self._load_cameras())
         if not active:
-            self.logger.error("Hiç aktif kamera yok! config.yaml'da 'enabled: true' yap.")
-            sys.exit(1)
+            # Kamera yoksa: web açıksa panel'i yine de başlat (kullanıcı oradan
+            # kamera ekleyip yeniden başlatabilsin). Headless modda yapacak iş
+            # olmadığından çık. Aksi halde boş DB + restart:unless-stopped =
+            # sonsuz crash döngüsü olur ve panele hiç erişilemez.
+            if self.settings.web_enabled:
+                self.logger.warning(
+                    "Hiç aktif kamera yok. Panel'den ekle: "
+                    "http://%s:%s/settings/cameras (ekledikten sonra yeniden başlat).",
+                    self.settings.web_host,
+                    self.settings.web_port,
+                )
+            else:
+                self.logger.error(
+                    "Hiç aktif kamera yok ve web kapalı (WEB_ENABLED=false). "
+                    "Kamera ekleyip tekrar başlat. Çıkılıyor."
+                )
+                sys.exit(1)
 
         det = self.config.detection
         for cam in active:
@@ -144,6 +172,15 @@ class Application:
                 order_regex=det.order_no_regex,
                 add_hash_prefix=det.add_hash_prefix,
                 symbols=det.symbols,
+                mode=det.mode,
+                ocr_min_confidence=det.ocr_min_confidence,
+                yolo_model_path=det.yolo_model_path,
+                yolo_conf=det.yolo_conf,
+                paddle_model_root=det.paddle_model_root,
+                paddle_min_confidence=det.paddle_min_confidence,
+                min_votes=det.min_votes,
+                vote_window_seconds=det.vote_window_seconds,
+                dedup_window_seconds=det.dedup_window_seconds,
                 health=self.health,
                 stop_event=self.stop_event,
             )
@@ -152,6 +189,9 @@ class Application:
 
         sh = self.config.shopify
         shopify_client = ShopifyClient.from_settings(self.settings)
+        # Barkod (yolo/barcode) sipariş ID'sini kodlar → ID ile sorgula;
+        # OCR ise order name okur.
+        lookup = "id" if det.mode in ("barcode", "yolo") else "name"
         self._workers.append(
             ShopifyWorker(
                 db=self.db,
@@ -162,6 +202,7 @@ class Application:
                 metafield_namespace=sh.metafield_namespace,
                 poll_interval=sh.poll_interval_seconds,
                 max_retries=sh.max_retries,
+                lookup=lookup,
                 health=self.health,
                 stop_event=self.stop_event,
             )

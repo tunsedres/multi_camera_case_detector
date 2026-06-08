@@ -23,11 +23,51 @@ class CameraConfig(BaseModel):
 
 
 class DetectionConfig(BaseModel):
+    # Tespit yöntemi:
+    #   'yolo'    → YOLO barkod bölgesini bulur + pyzbar okur (küçük/uzak barkod için)
+    #   'barcode' → düz pyzbar (barkod büyük/net ise yeterli)
+    #   'ocr'     → etiketteki #numarayı OCR ile oku (order name)
+    #   'both'    → önce barkod, bulunamazsa OCR
+    mode: str = "ocr"
+    # YOLO barkod modeli (mode='yolo'). Image'a gömülü, offline.
+    yolo_model_path: str = "models/barcode_yolov8s.pt"
+    yolo_conf: float = Field(default=0.35, ge=0, le=1)
+    # PaddleOCR (mode='paddle'). Tesseract'tan çok daha doğru; offline modeller.
+    paddle_model_root: str = "models/paddleocr/whl"
+    paddle_min_confidence: float = Field(default=0.80, ge=0, le=1)
     target_fps: int = Field(default=3, ge=1, le=25)
+    # Tekrar engelleme (dedup):
+    #   'daily'  → aynı sipariş no günde 1 kez yazılır (kameradan bağımsız)
+    #   'window' → aynı sipariş+kamera dedup_window_seconds içinde 1 kez
+    dedup_mode: str = "daily"
     dedup_window_seconds: int = Field(default=30, ge=0)
-    order_no_regex: str = r"^#?\d{3,8}$"
+    # OCR/barkod uzunluk esnek: 3-10 haneli sipariş no.
+    order_no_regex: str = r"^#?\d{6,10}$"
     add_hash_prefix: bool = True
     symbols: list[str] = Field(default_factory=lambda: ["CODE128", "QRCODE"])
+    # OCR güven eşiği (0-100). Düşük = daha çok okuma ama daha çok yanlış.
+    ocr_min_confidence: float = Field(default=60.0, ge=0, le=100)
+    # Çoklu-kare oylama: bir numara 'vote_window_seconds' içinde 'min_votes' kez
+    # okununca onaylanır → tek-tük yanlış okumalar Shopify'a gitmez. min_votes=1
+    # oylamayı kapatır (her okuma anında tetikler).
+    min_votes: int = Field(default=3, ge=1)
+    vote_window_seconds: float = Field(default=4.0, gt=0)
+
+    @field_validator("mode")
+    @classmethod
+    def _valid_mode(cls, v: str) -> str:
+        allowed = {"ocr", "barcode", "both", "yolo", "paddle"}
+        if v not in allowed:
+            raise ValueError(f"detection.mode '{v}' geçersiz; biri olmalı: {allowed}")
+        return v
+
+    @field_validator("dedup_mode")
+    @classmethod
+    def _valid_dedup_mode(cls, v: str) -> str:
+        allowed = {"daily", "window"}
+        if v not in allowed:
+            raise ValueError(f"detection.dedup_mode '{v}' geçersiz; biri olmalı: {allowed}")
+        return v
 
     @field_validator("order_no_regex")
     @classmethod
@@ -68,7 +108,9 @@ class MonitoringConfig(BaseModel):
 
 
 class AppConfig(BaseModel):
-    cameras: list[CameraConfig]
+    # Kameralar artık SQLite'ta tutulur (panel CRUD). YAML'da bölüm olması
+    # gerekmez; geriye dönük uyum için opsiyonel bırakıldı (varsa yoksayılır).
+    cameras: list[CameraConfig] = Field(default_factory=list)
     detection: DetectionConfig = Field(default_factory=DetectionConfig)
     shopify: ShopifyConfig = Field(default_factory=ShopifyConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
@@ -88,8 +130,11 @@ class AppConfig(BaseModel):
         return [c for c in self.cameras if c.enabled]
 
 
+DEFAULT_CONFIG_PATH = "config/config.yaml"
+
+
 def load_config(
-    config_path: str = "config/config.yaml",
+    config_path: str = DEFAULT_CONFIG_PATH,
     settings: Settings | None = None,
 ) -> AppConfig:
     """config.yaml'i yükler, doğrular, RTSP placeholder'larını .env ile doldurur."""
@@ -100,12 +145,28 @@ def load_config(
     with open(path, encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
 
-    config = AppConfig.model_validate(raw)
+    # Kameralar SQLite'tan gelir (panel CRUD); YAML'daki olası 'cameras' bölümü
+    # yoksayılır. Yapısal config (detection/shopify/storage/...) YAML'da kalır.
+    raw.pop("cameras", None)
+    return AppConfig.model_validate(raw)
 
+
+# --------------------------------------------------------------------------- #
+#  Kameralar SQLite'ta tutulur. DB satırını çalıştırılabilir CameraConfig'e
+#  çevirirken RTSP'deki {user}/{pass} placeholder'ları .env ile doldurulur
+#  (sır DB'de değil .env'de). app.py worker'ları kurarken bunu kullanır.
+# --------------------------------------------------------------------------- #
+def resolve_camera(row: dict, settings: Settings | None = None) -> CameraConfig:
+    """DB kamera satırını ({user}/{pass} ham) doldurulmuş CameraConfig'e çevirir."""
     settings = settings or get_settings()
-    user = settings.camera_username
-    password = settings.camera_password
-    for cam in config.cameras:
-        cam.rtsp = cam.rtsp.replace("{user}", user).replace("{pass}", password)
-
-    return config
+    rtsp = (
+        row["rtsp"]
+        .replace("{user}", settings.camera_username)
+        .replace("{pass}", settings.camera_password)
+    )
+    return CameraConfig(
+        id=row["id"],
+        name=row["name"],
+        rtsp=rtsp,
+        enabled=bool(row["enabled"]),
+    )

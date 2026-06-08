@@ -14,9 +14,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.web.context import AppContext
 from app.web.routes import public_router, ui_router
+from app.web.security import auth_middleware
 
 _DIR = Path(__file__).resolve().parent
 _TEMPLATES = _DIR / "templates"
@@ -63,6 +65,9 @@ def create_app(context: AppContext) -> FastAPI:
 
     if _STATIC.exists():
         app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
+
+    # Kimlik doğrulama: /login + /health + /static hariç tüm istekleri korur.
+    app.add_middleware(BaseHTTPMiddleware, dispatch=auth_middleware)
 
     app.include_router(public_router)
     app.include_router(ui_router)

@@ -7,15 +7,25 @@ Admin Panel route'ları.
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from pydantic import ValidationError
 
+from app.config import CameraConfig
 from app.web.context import AppContext
-from app.web.security import require_auth
+from app.web.security import (
+    COOKIE_NAME,
+    SESSION_TTL_SECONDS,
+    check_credentials,
+    make_session_cookie,
+)
 
-ui_router = APIRouter(dependencies=[Depends(require_auth)])
+# Auth, app seviyesindeki middleware ile yapılır (bkz. security.auth_middleware).
+# ui_router HTML sayfalar; public_router /health (+ /login burada, muaf yol).
+ui_router = APIRouter()
 public_router = APIRouter()
 
 PAGE_SIZE = 50
@@ -83,7 +93,7 @@ def events(
             "page": page,
             "pages": pages,
             "filters": filters,
-            "cameras": ctx.config.cameras,
+            "cameras": ctx.db.list_cameras(),
             "status_options": STATUS_OPTIONS,
             "version": ctx.version,
         },
@@ -128,6 +138,164 @@ def event_retry(request: Request, event_id: int):
 @ui_router.get("/api/stats")
 def api_stats(request: Request):
     return JSONResponse(_ctx(request).db.stats())
+
+
+# --------------------------------------------------------------------------- #
+#  Kamera ayarları (panelden SQLite yönetimi)
+#
+#  Kameralar DB'de tutulur. Worker'lar boot'ta kurulduğu için değişiklikler
+#  yeniden başlatmada etkin olur; kaydedince mark_restart_needed() banner gösterir.
+#  RTSP {user}/{pass} ham şablon saklanır; sır DB'ye yazılmaz (.env'den doldurulur).
+# --------------------------------------------------------------------------- #
+def _render_cameras(request: Request, *, error: str | None = None, form: dict | None = None):
+    ctx = _ctx(request)
+    return _templates(request).TemplateResponse(
+        "cameras.html",
+        {
+            "request": request,
+            "cameras": ctx.db.list_cameras(),
+            "restart_needed": ctx.restart_needed,
+            "error": error,
+            "form": form or {},
+            "next_id": ctx.db.next_camera_id(),
+            "version": ctx.version,
+        },
+    )
+
+
+@ui_router.get("/settings/cameras")
+def cameras_page(request: Request):
+    return _render_cameras(request)
+
+
+@ui_router.post("/settings/cameras/save")
+def cameras_save(
+    request: Request,
+    camera_id: int = Form(...),
+    name: str = Form(...),
+    rtsp: str = Form(...),
+    enabled: str | None = Form(default=None),
+    original_id: str = Form(default=""),
+):
+    """Kamera ekle (original_id boş) veya güncelle (original_id mevcut kamerayı işaret eder)."""
+    ctx = _ctx(request)
+    is_enabled = bool(enabled)
+    form = {"camera_id": camera_id, "name": name, "rtsp": rtsp, "enabled": is_enabled}
+    # Boş string = yeni kayıt; dolu = düzenlenen kameranın eski id'si.
+    orig_id = int(original_id) if original_id.strip() else None
+
+    # Alan doğrulaması (id>=1, boş isim vb.) için CameraConfig'i kullan.
+    try:
+        cam = CameraConfig(id=camera_id, name=name.strip(), rtsp=rtsp.strip(), enabled=is_enabled)
+    except ValidationError as e:
+        return _render_cameras(request, error=_first_error(e), form=form)
+
+    try:
+        if orig_id is None:
+            ctx.db.add_camera(cam.id, cam.name, cam.rtsp, cam.enabled)
+        else:
+            found = ctx.db.update_camera(orig_id, cam.id, cam.name, cam.rtsp, cam.enabled)
+            if not found:
+                raise HTTPException(status_code=404, detail="Kamera bulunamadı")
+    except sqlite3.IntegrityError:
+        return _render_cameras(request, error=f"Kamera id {cam.id} zaten kullanımda.", form=form)
+
+    ctx.mark_restart_needed()
+    return RedirectResponse(url="/settings/cameras", status_code=303)
+
+
+@ui_router.post("/settings/cameras/{cam_id}/delete")
+def cameras_delete(request: Request, cam_id: int):
+    ctx = _ctx(request)
+    if not ctx.db.delete_camera(cam_id):
+        raise HTTPException(status_code=404, detail="Kamera bulunamadı")
+    ctx.mark_restart_needed()
+    return RedirectResponse(url="/settings/cameras", status_code=303)
+
+
+@ui_router.post("/settings/cameras/{cam_id}/toggle")
+def cameras_toggle(request: Request, cam_id: int):
+    """enabled bayrağını çevir (hızlı aç/kapat)."""
+    ctx = _ctx(request)
+    if not ctx.db.toggle_camera(cam_id):
+        raise HTTPException(status_code=404, detail="Kamera bulunamadı")
+    ctx.mark_restart_needed()
+    return RedirectResponse(url="/settings/cameras", status_code=303)
+
+
+@ui_router.post("/settings/restart")
+def restart_system(request: Request):
+    """
+    Sistemi yeniden başlatır: süreç SIGTERM ile çıkar, Docker
+    (restart: unless-stopped) ~2-3 sn içinde tekrar başlatır. Önce 'yeniden
+    başlatılıyor' bilgi sayfası gösterilir (sayfa kendini birkaç sn sonra
+    /settings/cameras'a yönlendirir).
+    """
+    ctx = _ctx(request)
+    ctx.request_restart()
+    return _templates(request).TemplateResponse(
+        "restarting.html",
+        {"request": request, "version": ctx.version},
+    )
+
+
+def _first_error(exc: Exception) -> str:
+    """ValidationError'dan kullanıcıya gösterilecek ilk mesajı çıkar."""
+    if isinstance(exc, ValidationError):
+        errs = exc.errors()
+        if errs:
+            loc = ".".join(str(p) for p in errs[0].get("loc", ()))
+            return f"{loc}: {errs[0].get('msg', 'geçersiz değer')}"
+    return str(exc)
+
+
+# --------------------------------------------------------------------------- #
+#  Giriş / çıkış (session tabanlı)
+# --------------------------------------------------------------------------- #
+@public_router.get("/login")
+def login_page(request: Request):
+    ctx = _ctx(request)
+    # Auth kapalıysa ya da zaten girişliyse panele gönder.
+    if not ctx.settings.auth_enabled:
+        return RedirectResponse(url="/", status_code=303)
+    return _templates(request).TemplateResponse(
+        "login.html", {"request": request, "version": ctx.version, "error": None}
+    )
+
+
+@public_router.post("/login")
+def login_submit(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+):
+    ctx = _ctx(request)
+    if not check_credentials(username, password, ctx.settings):
+        return _templates(request).TemplateResponse(
+            "login.html",
+            {
+                "request": request,
+                "version": ctx.version,
+                "error": "Kullanıcı adı veya şifre hatalı.",
+            },
+            status_code=401,
+        )
+    resp = RedirectResponse(url="/", status_code=303)
+    resp.set_cookie(
+        COOKIE_NAME,
+        make_session_cookie(username, ctx.session_secret),
+        max_age=SESSION_TTL_SECONDS,
+        httponly=True,
+        samesite="lax",
+    )
+    return resp
+
+
+@ui_router.post("/logout")
+def logout(request: Request):
+    resp = RedirectResponse(url="/login", status_code=303)
+    resp.delete_cookie(COOKIE_NAME)
+    return resp
 
 
 # --------------------------------------------------------------------------- #

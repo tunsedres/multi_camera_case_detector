@@ -39,7 +39,7 @@ RTSP (substream) → CameraWorker (kamera başına 1 thread)
                        → on_detection: dedup → snapshot → SQLite (pending)
 SQLite (pending) → ShopifyWorker (tek thread) → Shopify GraphQL (note+metafield)
 MaintenanceWorker → snapshot retention temizliği + lisans recheck
-Admin Web Panel (FastAPI/uvicorn, ana thread) → dashboard, arama, snapshot, /health
+Admin Web Panel (FastAPI/uvicorn, ana thread) → dashboard, arama, snapshot, kamera CRUD, /health
 ```
 
 Orchestrator: [app/app.py](app/app.py) `Application` sınıfı her şeyi kurar.
@@ -50,22 +50,30 @@ Worker'lar daemon thread; web sunucusu ana thread'i bloklar ve sinyalleri yönet
 | Yol | Sorumluluk |
 |-----|-----------|
 | `app/settings.py` | `.env` → sırlar/deployment (pydantic-settings) |
-| `app/config.py` | `config.yaml` → yapısal config (pydantic, doğrulamalı) |
+| `app/config.py` | `config.yaml` → yapısal config (pydantic) + `resolve_camera` (DB→RTSP) |
 | `app/camera_worker.py` | RTSP oku, throttle, reconnect, health raporla |
 | `app/detection/barcode.py` | pyzbar wrapper, regex filtre, normalize |
 | `app/shopify_worker.py` | pending event'leri Shopify'a yaz (retry/rate-limit) |
 | `app/integrations/shopify_client.py` | Shopify **GraphQL** Admin API |
 | `app/integrations/shopify_auth.py` | client_credentials token al/önbellekle/yenile |
-| `app/storage/database.py` | SQLite (events, dedup, admin sorguları, stats) |
+| `app/storage/database.py` | SQLite (events, dedup, **kamera CRUD**, admin sorguları, stats) |
 | `app/storage/snapshots.py` | JPEG kaydet + retention cleanup (cv2 tembel import) |
 | `app/licensing/` | Ed25519 offline lisans doğrulama |
 | `app/monitoring/health.py` | bellek-içi sağlık registry (thread-safe) |
 | `app/scheduler.py` | periyodik bakım (retention, lisans) |
-| `app/web/` | FastAPI admin panel (Jinja2 + lokal statik, CDN yok) |
+| `app/web/` | FastAPI admin panel (Jinja2 + lokal statik, CDN yok) — kamera CRUD dâhil |
 
 ## Kritik tasarım kararları
 
-- **İki katmanlı config**: sırlar `.env`'de, yapı `config.yaml`'da. Sır asla YAML'a.
+- **İki katmanlı config**: sırlar `.env`'de, yapısal config `config.yaml`'da. Sır asla YAML'a.
+- **Kameralar SQLite'ta** (config.yaml'da değil): operasyonel veri (panelden CRUD)
+  olduğu için DB'ye taşındı. `Database` kamera CRUD'u tutar; `cameras.rtsp` **ham**
+  şablon (`{user}/{pass}`) saklanır, sır DB'ye yazılmaz. `config.resolve_camera`
+  okuma sırasında `.env` `CAMERA_*` ile doldurur. `app.py` worker'ları DB'den kurar.
+  Yapısal config (detection/shopify/storage/...) hâlâ YAML'da. Worker'lar boot'ta
+  kurulur: kamera değişikliği **yeniden başlatmada** etkin olur (hot-reload yok),
+  panel banner uyarır (`AppContext.mark_restart_needed`). `config.yaml`'daki olası
+  `cameras` bölümü `load_config` tarafından yoksayılır.
 - **Shopify GraphQL** (REST değil): REST Orders API deprecate ediliyor.
   Public arayüz (`ShopifyClient`, `OrderNotFound`, `ShopifyError`) REST'ten miras.
 - **Shopify auth — iki yöntem**: (A) `client_id`+`client_secret` ile

@@ -15,10 +15,16 @@
     <nav>
       <a href="/">Dashboard</a>
       <a href="/events">Olaylar</a>
+      <a href="/settings/cameras">Kameralar</a>
     </nav>
     <div class="topbar-right">
       <span id="health-badge" class="badge badge-pending">●</span>
       <span class="muted">v{{ version }}</span>
+      {% if request.app.state.context.settings.auth_enabled %}
+      <form method="post" action="/logout" style="margin:0;">
+        <button type="submit" class="btn-link">Çıkış</button>
+      </form>
+      {% endif %}
     </div>
   </header>
 

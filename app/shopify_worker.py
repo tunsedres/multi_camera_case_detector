@@ -38,6 +38,7 @@ class ShopifyWorker(threading.Thread):
         metafield_namespace: str = "packing",
         poll_interval: float = 2.0,
         max_retries: int = 5,
+        lookup: str = "name",
         health: HealthRegistry | None = None,
         stop_event: threading.Event | None = None,
     ):
@@ -50,6 +51,8 @@ class ShopifyWorker(threading.Thread):
         self.metafield_namespace = metafield_namespace
         self.poll_interval = poll_interval
         self.max_retries = max_retries
+        # Sipariş arama yöntemi: 'name' (OCR → order name) ya da 'id' (barkod → order ID)
+        self.lookup = lookup
         self.health = health
         self.stop_event = stop_event or threading.Event()
 
@@ -92,6 +95,7 @@ class ShopifyWorker(threading.Thread):
                 write_note=self.write_note,
                 write_metafield=self.write_metafield,
                 metafield_namespace=self.metafield_namespace,
+                lookup=self.lookup,
             )
             self.db.mark_shopify_success(event_id)
             if self.health:

@@ -5,57 +5,38 @@
 # ============================================================
 
 # ---- Kameralar ----
-# POC için 1 kamera ile başla, doğrulayınca diğerlerini aç.
+# Kameralar artık SQLite'ta (events.db) tutulur ve Admin Panel'den yönetilir:
+#   Panel → Kameralar (/settings/cameras) → ekle / düzenle / sil / aç-kapat.
+# RTSP'de kullanıcı/şifre {user}/{pass} olarak girilir; bunlar .env'deki CAMERA_*
+# ile doldurulur (sır DB'ye yazılmaz). Bu dosyadaki 'cameras' bölümü yoksayılır.
 # Hikvision substream: "/Streaming/Channels/<kanal>2" (düşük çözünürlük, barkod için yeterli)
-cameras:
-  - id: 1
-    name: "Masa 1"
-    rtsp: "rtsp://{user}:{pass}@192.168.1.101:554/Streaming/Channels/102"
-    enabled: true
-
-  - id: 2
-    name: "Masa 2"
-    rtsp: "rtsp://{user}:{pass}@192.168.1.102:554/Streaming/Channels/102"
-    enabled: false
-
-  - id: 3
-    name: "Masa 3"
-    rtsp: "rtsp://{user}:{pass}@192.168.1.103:554/Streaming/Channels/102"
-    enabled: false
-
-  - id: 4
-    name: "Masa 4"
-    rtsp: "rtsp://{user}:{pass}@192.168.1.104:554/Streaming/Channels/102"
-    enabled: false
-
-  - id: 5
-    name: "Masa 5"
-    rtsp: "rtsp://{user}:{pass}@192.168.1.105:554/Streaming/Channels/102"
-    enabled: false
-
-  - id: 6
-    name: "Masa 6"
-    rtsp: "rtsp://{user}:{pass}@192.168.1.106:554/Streaming/Channels/102"
-    enabled: false
-
-  - id: 7
-    name: "Masa 7"
-    rtsp: "rtsp://{user}:{pass}@192.168.1.107:554/Streaming/Channels/102"
-    enabled: false
-
-  - id: 8
-    name: "Masa 8"
-    rtsp: "rtsp://{user}:{pass}@192.168.1.108:554/Streaming/Channels/102"
-    enabled: false
 
 # ---- Tespit ----
 detection:
-  target_fps: 3                    # Saniyede işlenecek frame (kamera 25 gönderir)
-  dedup_window_seconds: 30         # Aynı sipariş+kamera bu süre içinde tekrar yoksayılır
-  order_no_regex: '^#?\d{3,8}$'    # Sipariş no formatı; etikette sadece sayı varsa '^\d+$'
-  add_hash_prefix: true            # '1234' -> '#1234' (Shopify araması '#1234' bekler)
-  # Hangi barkod tipleri taransın (boş = pyzbar varsayılanı, hepsi)
-  symbols: ["CODE128", "QRCODE"]
+  # Yöntem: 'paddle' (PaddleOCR — order-name'i okur, en doğru; bu kurulumda kullanılan),
+  # 'ocr' (Tesseract — daha hızlı ama rakam karıştırabilir), 'barcode'/'yolo' (pyzbar).
+  # NOT: Barkod bu kamera açısında çok küçük; pyzbar/YOLO okuyamadı (test edildi).
+  # Tesseract rakam karıştırıyordu (#939146→#839146, yanlış siparişe yazma riski).
+  # PaddleOCR aynı videoda 3 etiketi de sıfır yanlış-hane ile okudu.
+  mode: paddle
+  paddle_model_root: models/paddleocr/whl
+  paddle_min_confidence: 0.80      # PaddleOCR güven eşiği (0-1)
+  yolo_model_path: models/barcode_yolov8s.pt
+  yolo_conf: 0.35
+  target_fps: 1                    # PaddleOCR CPU'da ~1 kare/sn; etiket saniyeler kalıyor, yeterli
+  # Tekrar engelleme: 'daily' = aynı sipariş günde 1 kez (kameradan bağımsız),
+  # 'window' = aynı sipariş+kamera dedup_window_seconds içinde 1 kez.
+  dedup_mode: daily
+  dedup_window_seconds: 30         # ('window' modunda) aynı sipariş+kamera tekrar yoksayma
+  # Order name formatı: '#' + 6-10 hane. Yarım/yanlış OCR okumalarını eler.
+  order_no_regex: '^#?\d{6,10}$'
+  add_hash_prefix: true            # '939146' -> '#939146' (Shopify order name araması)
+  ocr_min_confidence: 60           # OCR güven eşiği (0-100); düşük=çok okuma+çok yanlış
+  # Çoklu-kare oylama: değer vote_window_seconds içinde min_votes kez okununca onaylanır.
+  min_votes: 3                     # 1 = oylama kapalı (her okuma anında tetikler)
+  vote_window_seconds: 4
+  # 'barcode'/'yolo'/'both' modunda hangi barkod tipleri taransın
+  symbols: ["EAN13", "CODE128", "QRCODE"]
 
 # ---- Shopify ----
 shopify:

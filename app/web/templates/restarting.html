@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Yeniden başlatılıyor · Packing Detector{% endblock %}
+
+{% block content %}
+<h1>🔄 Sistem yeniden başlatılıyor…</h1>
+
+<section class="panel">
+  <p class="card-value">Lütfen bekleyin. Sistem birkaç saniye içinde tekrar ayağa kalkacak.</p>
+  <p class="muted">
+    Bu sayfa otomatik olarak <a href="/settings/cameras">Kameralar</a> sayfasına dönecek.
+    Dönmezse birkaç saniye sonra sayfayı yenileyin.
+  </p>
+  <p class="muted"><span id="countdown">8</span> sn…</p>
+</section>
+
+<script>
+// Süreç kapanırken bağlantı kopabilir; bir süre bekleyip Kameralar'a dön.
+// Sunucu henüz ayağa kalkmadıysa tarayıcı kendi retry'ını yapar.
+var left = 8;
+var el = document.getElementById('countdown');
+var t = setInterval(function () {
+  left -= 1;
+  if (el) el.textContent = left;
+  if (left <= 0) {
+    clearInterval(t);
+    window.location.href = '/settings/cameras';
+  }
+}, 1000);
+</script>
+{% endblock %}

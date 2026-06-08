@@ -32,6 +32,17 @@ CREATE INDEX IF NOT EXISTS idx_order_no ON events(order_no);
 CREATE INDEX IF NOT EXISTS idx_detected_at ON events(detected_at);
 CREATE INDEX IF NOT EXISTS idx_shopify_status ON events(shopify_status);
 CREATE INDEX IF NOT EXISTS idx_dedup ON events(order_no, camera_id, detected_at);
+
+-- Kamera tanımları (panelden yönetilir). rtsp ham şablon olarak ({user}/{pass})
+-- saklanır; sır DB'ye yazılmaz, okuma sırasında .env CAMERA_* ile doldurulur.
+CREATE TABLE IF NOT EXISTS cameras (
+    id          INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL,
+    rtsp        TEXT NOT NULL,
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -63,23 +74,44 @@ class Database:
     # ------------------------------------------------------------------ #
     #  Yazma (camera + shopify worker)
     # ------------------------------------------------------------------ #
-    def is_duplicate(self, order_no: str, camera_id: int, window_seconds: int) -> bool:
-        """Aynı sipariş + aynı kamerada son N saniye içinde okundu mu?"""
+    def is_duplicate(
+        self,
+        order_no: str,
+        camera_id: int,
+        window_seconds: int,
+        mode: str = "window",
+    ) -> bool:
+        """
+        Bu tespit daha önce kaydedilmiş (tekrar) mi?
+
+        mode='daily'  → aynı sipariş no bugün (yerel gün) zaten yazılmışsa True.
+                        Kameradan bağımsız: hangi masada okunursa okunsun günde 1.
+        mode='window' → aynı sipariş + aynı kamera son window_seconds içinde varsa.
+        """
+        conn = self._conn()
+        if mode == "daily":
+            row = conn.execute(
+                """
+                SELECT 1 FROM events
+                WHERE order_no = ?
+                  AND date(detected_at) = date('now', 'localtime')
+                LIMIT 1
+                """,
+                (order_no,),
+            ).fetchone()
+            return row is not None
+
         if window_seconds <= 0:
             return False
         cutoff = datetime.now() - timedelta(seconds=window_seconds)
-        row = (
-            self._conn()
-            .execute(
-                """
+        row = conn.execute(
+            """
             SELECT 1 FROM events
             WHERE order_no = ? AND camera_id = ? AND detected_at >= ?
             LIMIT 1
             """,
-                (order_no, camera_id, cutoff),
-            )
-            .fetchone()
-        )
+            (order_no, camera_id, cutoff),
+        ).fetchone()
         return row is not None
 
     def insert_event(
@@ -219,6 +251,69 @@ class Database:
         )
         self._conn().commit()
         return cur.rowcount > 0
+
+    # ------------------------------------------------------------------ #
+    #  Kamera tanımları (Admin Panel CRUD)
+    #  Not: rtsp ham şablon olarak saklanır ({user}/{pass}); .env ile doldurma
+    #  okuyan tarafın (app.py) sorumluluğunda — sır DB'ye yazılmaz.
+    # ------------------------------------------------------------------ #
+    def list_cameras(self) -> list[dict]:
+        rows = self._conn().execute("SELECT * FROM cameras ORDER BY id").fetchall()
+        return [dict(r) for r in rows]
+
+    def get_camera(self, cam_id: int) -> dict | None:
+        row = self._conn().execute("SELECT * FROM cameras WHERE id=?", (cam_id,)).fetchone()
+        return dict(row) if row else None
+
+    def add_camera(self, cam_id: int, name: str, rtsp: str, enabled: bool = True) -> None:
+        """Yeni kamera ekler. id zaten varsa sqlite3.IntegrityError fırlatır."""
+        self._conn().execute(
+            "INSERT INTO cameras (id, name, rtsp, enabled) VALUES (?, ?, ?, ?)",
+            (cam_id, name, rtsp, int(enabled)),
+        )
+        self._conn().commit()
+
+    def update_camera(
+        self, original_id: int, cam_id: int, name: str, rtsp: str, enabled: bool
+    ) -> bool:
+        """
+        Mevcut kamerayı günceller (id de değişebilir). Yeni id başka kayıtla
+        çakışırsa sqlite3.IntegrityError fırlatır. Bulunamazsa False döner.
+        """
+        cur = self._conn().execute(
+            """
+            UPDATE cameras
+            SET id=?, name=?, rtsp=?, enabled=?, updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (cam_id, name, rtsp, int(enabled), original_id),
+        )
+        self._conn().commit()
+        return cur.rowcount > 0
+
+    def delete_camera(self, cam_id: int) -> bool:
+        cur = self._conn().execute("DELETE FROM cameras WHERE id=?", (cam_id,))
+        self._conn().commit()
+        return cur.rowcount > 0
+
+    def toggle_camera(self, cam_id: int) -> bool:
+        """enabled bayrağını çevirir. Bulunamazsa False döner."""
+        cur = self._conn().execute(
+            """
+            UPDATE cameras
+            SET enabled = CASE enabled WHEN 1 THEN 0 ELSE 1 END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (cam_id,),
+        )
+        self._conn().commit()
+        return cur.rowcount > 0
+
+    def next_camera_id(self) -> int:
+        """Yeni kamera için kullanılabilir id (mevcut max + 1, boşsa 1)."""
+        row = self._conn().execute("SELECT MAX(id) AS m FROM cameras").fetchone()
+        return (row["m"] or 0) + 1
 
     def stats(self) -> dict:
         conn = self._conn()

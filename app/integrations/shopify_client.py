@@ -37,6 +37,14 @@ query findOrder($q: String!) {
 }
 """
 
+# Order ID (GID) ile doğrudan sorgu. Barkod sipariş ID'sini kodladığı için
+# isimle aramak yerine ID ile çekmek deterministik ve hızlıdır.
+_QUERY_GET_ORDER_BY_ID = """
+query getOrder($id: ID!) {
+  order(id: $id) { id name note }
+}
+"""
+
 _MUTATION_UPDATE_NOTE = """
 mutation updateNote($id: ID!, $note: String!) {
   orderUpdate(input: { id: $id, note: $note }) {
@@ -246,6 +254,20 @@ class ShopifyClient:
             return None
         return edges[0]["node"]
 
+    @staticmethod
+    def to_order_gid(order_id: str) -> str:
+        """Sayısal order ID'yi GID'e çevirir. Zaten gid:// ise dokunmaz."""
+        oid = str(order_id).strip().lstrip("#")
+        if oid.startswith("gid://"):
+            return oid
+        return f"gid://shopify/Order/{oid}"
+
+    def find_order_by_id(self, order_id: str) -> dict | None:
+        """Order ID (barkod değeri) ile doğrudan çeker. {id, name, note} ya da None."""
+        gid = self.to_order_gid(order_id)
+        data = self._graphql(_QUERY_GET_ORDER_BY_ID, {"id": gid})
+        return data.get("order")  # yoksa None
+
     def append_to_note(self, order_gid: str, current_note: str | None, new_line: str) -> None:
         """order.note alanına yeni satır ekler (üzerine yazmaz)."""
         existing = (current_note or "").strip()
@@ -279,15 +301,22 @@ class ShopifyClient:
         write_note: bool = True,
         write_metafield: bool = True,
         metafield_namespace: str = "packing",
+        lookup: str = "name",
     ) -> str:
         """
         Tam akış: sipariş bul → note'a ekle → metafield ekle.
+
+        lookup='name' → order_no bir sipariş ismi ('#1042'); name ile aranır (OCR).
+        lookup='id'   → order_no bir Shopify order ID (barkod değeri); ID ile çekilir.
         OrderNotFound atılırsa retry edilmemeli (sipariş gerçekten yok).
         Sipariş gid döner.
         """
-        order = self.find_order_by_name(order_no)
+        if lookup == "id":
+            order = self.find_order_by_id(order_no)
+        else:
+            order = self.find_order_by_name(order_no)
         if not order:
-            raise OrderNotFound(f"Sipariş bulunamadı: {order_no}")
+            raise OrderNotFound(f"Sipariş bulunamadı ({lookup}): {order_no}")
 
         order_gid = order["id"]
         timestamp_str = timestamp.strftime("%d.%m.%Y %H:%M:%S")
@@ -295,7 +324,8 @@ class ShopifyClient:
             timestamp=timestamp_str,
             camera_name=camera_name,
             camera_id=camera_id,
-            order_no=order_no,
+            # Notta gerçek sipariş ismini göster (barkod ID değil); yoksa okunan değer.
+            order_no=order.get("name") or order_no,
         )
 
         if write_note:

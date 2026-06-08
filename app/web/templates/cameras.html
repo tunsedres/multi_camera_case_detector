@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Kamera Ayarları · Packing Detector{% endblock %}
+
+{% block content %}
+<h1>Kamera Ayarları</h1>
+
+{% if restart_needed %}
+<section class="panel">
+  <p class="card-value warn">⚠️ Kamera ayarları değişti — değişikliklerin etkin olması için sistemi yeniden başlat.</p>
+  <p class="muted">Tespit thread'leri açılışta kurulur; yeniden başlatmadan yeni/değişen kameralar devreye girmez.</p>
+  <form method="post" action="/settings/restart"
+        onsubmit="return confirm('Sistem yeniden başlatılsın mı? Birkaç saniye tespit duraksar.');">
+    <button type="submit">🔄 Şimdi Yeniden Başlat</button>
+  </form>
+</section>
+{% endif %}
+
+{% if error %}
+<section class="panel">
+  <p class="card-value warn">Hata: {{ error }}</p>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Kameralar</h2>
+    <span class="muted">{{ cameras | length }} kamera</span>
+  </div>
+  <table class="table">
+    <thead><tr><th>#</th><th>İsim</th><th>RTSP (şablon)</th><th>Durum</th><th>İşlem</th></tr></thead>
+    <tbody>
+    {% for c in cameras %}
+      <tr>
+        <td>{{ c.id }}</td>
+        <td>{{ c.name }}</td>
+        <td class="muted"><code>{{ c.rtsp }}</code></td>
+        <td>
+          {% if c.enabled %}
+            <span class="badge badge-success">Açık</span>
+          {% else %}
+            <span class="badge badge-pending">Kapalı</span>
+          {% endif %}
+        </td>
+        <td>
+          <form method="post" action="/settings/cameras/{{ c.id }}/toggle" style="display:inline">
+            <button type="submit" class="btn-link">{{ "Kapat" if c.enabled else "Aç" }}</button>
+          </form>
+          ·
+          <a class="btn-link"
+             href="/settings/cameras?edit={{ c.id }}"
+             data-edit="{{ c.id }}" data-name="{{ c.name }}" data-rtsp="{{ c.rtsp }}"
+             data-enabled="{{ '1' if c.enabled else '0' }}">Düzenle</a>
+          ·
+          <form method="post" action="/settings/cameras/{{ c.id }}/delete" style="display:inline"
+                onsubmit="return confirm('Kamera #{{ c.id }} ({{ c.name }}) silinsin mi?');">
+            <button type="submit" class="btn-link">Sil</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">Henüz kamera yok. Aşağıdan ekle.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <h2 id="form-title">Yeni kamera ekle</h2>
+  <form method="post" action="/settings/cameras/save" class="filters" id="camera-form">
+    <input type="hidden" name="original_id" id="original_id" value="">
+    <label>ID
+      <input type="number" name="camera_id" id="camera_id" min="1"
+             value="{{ form.camera_id or next_id }}" required>
+    </label>
+    <label>İsim
+      <input type="text" name="name" id="name" placeholder="Masa 1"
+             value="{{ form.name or '' }}" required>
+    </label>
+    <label>RTSP şablonu
+      <input type="text" name="rtsp" id="rtsp" size="60"
+             placeholder="rtsp://{user}:{pass}@192.168.1.101:554/Streaming/Channels/102"
+             value="{{ form.rtsp or '' }}" required>
+    </label>
+    <label>
+      <input type="checkbox" name="enabled" id="enabled" value="1"
+             {% if form.enabled %}checked{% endif %}> Açık
+    </label>
+    <button type="submit">Kaydet</button>
+    <a class="btn-link" href="/settings/cameras" id="cancel-edit" style="display:none">İptal</a>
+  </form>
+  <p class="muted">
+    Kullanıcı adı/şifre <code>{user}</code>/<code>{pass}</code> olarak bırakılır;
+    bunlar <code>.env</code> içindeki <code>CAMERA_USERNAME</code>/<code>CAMERA_PASSWORD</code>
+    ile doldurulur (sır veritabanına yazılmaz).
+  </p>
+</section>
+
+<script>
+// "Düzenle" linkine tıklanınca formu ilgili kameranın değerleriyle doldur.
+document.querySelectorAll('a[data-edit]').forEach(function (link) {
+  link.addEventListener('click', function (e) {
+    e.preventDefault();
+    document.getElementById('form-title').textContent =
+      'Kamera #' + link.dataset.edit + ' düzenle';
+    document.getElementById('original_id').value = link.dataset.edit;
+    document.getElementById('camera_id').value = link.dataset.edit;
+    document.getElementById('name').value = link.dataset.name;
+    document.getElementById('rtsp').value = link.dataset.rtsp;
+    document.getElementById('enabled').checked = link.dataset.enabled === '1';
+    document.getElementById('cancel-edit').style.display = '';
+    document.getElementById('camera-form').scrollIntoView({behavior: 'smooth'});
+  });
+});
+</script>
+{% endblock %}

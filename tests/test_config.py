@@ -55,16 +55,47 @@ def test_enabled_cameras_property():
     assert len(cfg.enabled_cameras) == 1
 
 
-def test_load_config_fills_rtsp_placeholders(tmp_path):
+def test_load_config_ignores_yaml_cameras(tmp_path):
+    """Kameralar artık SQLite'tan gelir; YAML'daki olası 'cameras' bölümü yoksayılır."""
     cfg_file = tmp_path / "config.yaml"
     cfg_file.write_text(
         yaml.safe_dump(
-            {"cameras": [{"id": 1, "name": "Masa 1", "rtsp": "rtsp://{user}:{pass}@1.2.3.4/1"}]}
+            {
+                "cameras": [{"id": 1, "name": "Masa 1", "rtsp": "rtsp://{user}:{pass}@1.2.3.4/1"}],
+                "detection": {"target_fps": 5},
+            }
         )
     )
     s = Settings(_env_file=None, camera_username="admin", camera_password="p4ss")
     cfg = load_config(str(cfg_file), settings=s)
-    assert cfg.cameras[0].rtsp == "rtsp://admin:p4ss@1.2.3.4/1"
+    assert cfg.cameras == []  # YAML kameraları taşınmaz
+    assert cfg.detection.target_fps == 5  # yapısal config korunur
+
+
+def test_detection_mode_default_is_ocr():
+    assert AppConfig(cameras=[]).detection.mode == "ocr"
+
+
+def test_detection_mode_rejects_invalid():
+    with pytest.raises(ValidationError):
+        AppConfig(cameras=[], detection={"mode": "magic"})
+
+
+def test_detection_mode_yolo_valid():
+    assert AppConfig(cameras=[], detection={"mode": "yolo"}).detection.mode == "yolo"
+
+
+def test_detection_mode_paddle_valid():
+    assert AppConfig(cameras=[], detection={"mode": "paddle"}).detection.mode == "paddle"
+
+
+def test_dedup_mode_default_is_daily():
+    assert AppConfig(cameras=[]).detection.dedup_mode == "daily"
+
+
+def test_dedup_mode_rejects_invalid():
+    with pytest.raises(ValidationError):
+        AppConfig(cameras=[], detection={"dedup_mode": "haftalik"})
 
 
 def test_load_config_missing_file():

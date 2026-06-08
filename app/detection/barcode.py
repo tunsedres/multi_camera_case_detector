@@ -11,12 +11,13 @@ tespiti eklenebilir: önce barkod konumu bulunur, kırpılır, sonra pyzbar'a ve
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 
 import cv2
 import numpy as np
 from pyzbar import pyzbar
 from pyzbar.pyzbar import ZBarSymbol
+
+from app.detection.types import BarcodeResult
 
 # config'deki string isimleri ZBarSymbol'a eşle
 _SYMBOL_MAP = {
@@ -32,18 +33,10 @@ _SYMBOL_MAP = {
 }
 
 
-@dataclass
-class BarcodeResult:
-    raw_value: str  # Barkoddan okunan ham değer
-    normalized: str  # Shopify'a yazılacak hali (örn: #1234)
-    symbol_type: str  # CODE128, QRCODE vb.
-    polygon: list  # Barkod konumu (debug/çizim için)
-
-
 class BarcodeDetector:
     def __init__(
         self,
-        order_regex: str = r"^#?\d{3,8}$",
+        order_regex: str = r"^#?\d{6,10}$",
         add_hash_prefix: bool = True,
         symbols: list[str] | None = None,
     ):

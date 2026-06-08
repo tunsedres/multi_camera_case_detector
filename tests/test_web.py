@@ -73,10 +73,59 @@ def test_snapshot_path_traversal_blocked(context, client):
     assert client.get(f"/events/{eid}/snapshot").status_code == 404
 
 
-def test_auth_required_when_password_set(tmp_path, app_config):
-    settings = Settings(_env_file=None, admin_username="admin", admin_password="secret")
+def _auth_ctx(tmp_path, app_config):
+    settings = Settings(
+        _env_file=None,
+        admin_username="admin",
+        admin_password="secret",
+        session_secret="testsecret",
+    )
     health = HealthRegistry()
     health.register_camera(1, "Masa 1")
+    from app.storage.database import Database
+
+    return AppContext(
+        db=Database(str(tmp_path / "e.db")),
+        health=health,
+        snapshots=SnapshotStore(str(tmp_path / "s"), enabled=False),
+        settings=settings,
+        config=app_config,
+    )
+
+
+def test_protected_redirects_to_login_when_anonymous(tmp_path, app_config):
+    c = TestClient(create_app(_auth_ctx(tmp_path, app_config)))
+    # /health ve /login auth'suz erişilebilir
+    assert c.get("/health").status_code in (200, 503)
+    assert c.get("/login").status_code == 200
+    # Korumalı sayfa → /login'e yönlendir
+    r = c.get("/", follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == "/login"
+
+
+def test_login_flow_sets_session_and_grants_access(tmp_path, app_config):
+    c = TestClient(create_app(_auth_ctx(tmp_path, app_config)))
+    # Yanlış şifre → 401, cookie yok
+    bad = c.post("/login", data={"username": "admin", "password": "wrong"}, follow_redirects=False)
+    assert bad.status_code == 401
+
+    # Doğru giriş → 303 + session cookie
+    ok = c.post("/login", data={"username": "admin", "password": "secret"}, follow_redirects=False)
+    assert ok.status_code == 303
+    assert "packing_session" in ok.cookies
+
+    # Cookie TestClient'a yapışır → artık panele erişilebilir
+    assert c.get("/").status_code == 200
+
+    # Logout → cookie silinir, tekrar korunur
+    c.post("/logout")
+    assert c.get("/", follow_redirects=False).status_code == 303
+
+
+def test_no_auth_when_password_empty(tmp_path, app_config):
+    settings = Settings(_env_file=None, admin_password="")  # login kapalı
+    health = HealthRegistry()
     from app.storage.database import Database
 
     ctx = AppContext(
@@ -87,10 +136,4 @@ def test_auth_required_when_password_set(tmp_path, app_config):
         config=app_config,
     )
     c = TestClient(create_app(ctx))
-
-    # /health auth'suz erişilebilir
-    assert c.get("/health").status_code in (200, 503)
-    # / korunur
-    assert c.get("/").status_code == 401
-    assert c.get("/", auth=("admin", "secret")).status_code == 200
-    assert c.get("/", auth=("admin", "wrong")).status_code == 401
+    assert c.get("/").status_code == 200  # şifre yoksa panel açık

@@ -60,7 +60,7 @@ def test_filters_non_matching(monkeypatch, frame):
 
 def test_no_hash_prefix(monkeypatch, frame):
     monkeypatch.setattr(bc.pyzbar, "decode", _fake_decode([("1042", "CODE128")]))
-    det = BarcodeDetector(add_hash_prefix=False)
+    det = BarcodeDetector(order_regex=r"^#?\d{3,8}$", add_hash_prefix=False)
     assert det.detect(frame)[0].normalized == "1042"
 
 

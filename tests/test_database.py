@@ -31,6 +31,30 @@ def test_dedup_zero_window_disables(db):
     assert db.is_duplicate("#1001", 1, 0) is False
 
 
+def test_dedup_daily_same_order_any_camera(db):
+    """daily modda aynı sipariş bugün varsa, kamera fark etmeksizin duplicate."""
+    _insert(db, order_no="#939146", camera_id=1)
+    # aynı kamera → duplicate
+    assert db.is_duplicate("#939146", 1, 30, mode="daily") is True
+    # FARKLI kamera da → duplicate (kameradan bağımsız)
+    assert db.is_duplicate("#939146", 2, 30, mode="daily") is True
+    # başka sipariş → değil
+    assert db.is_duplicate("#111111", 1, 30, mode="daily") is False
+
+
+def test_dedup_daily_window_irrelevant(db):
+    """daily modda window_seconds dikkate alınmaz; bugünkü kayıt yeter."""
+    # 1 saat önce eklenmiş (window 30sn'i çoktan aşmış) ama aynı gün
+    db.insert_event("#939146", 1, "Masa 1", datetime.now() - timedelta(hours=1))
+    assert db.is_duplicate("#939146", 1, 30, mode="daily") is True
+
+
+def test_dedup_daily_yesterday_not_duplicate(db):
+    """daily modda dünkü kayıt bugünü engellemez."""
+    db.insert_event("#939146", 1, "Masa 1", datetime.now() - timedelta(days=1))
+    assert db.is_duplicate("#939146", 1, 30, mode="daily") is False
+
+
 def test_pending_and_success_flow(db):
     eid = _insert(db)
     assert len(db.get_pending_events()) == 1

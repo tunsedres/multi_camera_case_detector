@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     web_port: int = Field(default=8080, ge=1, le=65535)
     admin_username: str = "admin"
     admin_password: str = ""
+    # Session cookie imzalama anahtarı. Boşsa restart'ta rastgele üretilir
+    # (her restart'ta oturumlar düşer). Kalıcı oturum için .env'de sabit ver.
+    session_secret: str = ""
 
     # ---- Loglama ----
     log_level: str = "INFO"
@@ -64,6 +67,14 @@ class Settings(BaseSettings):
     def auth_enabled(self) -> bool:
         """Panel kimlik doğrulaması yalnızca parola tanımlıysa devreye girer."""
         return bool(self.admin_password)
+
+    def resolve_session_secret(self) -> str:
+        """Session imzalama anahtarı: .env'deki değer, yoksa rastgele (geçici)."""
+        if self.session_secret.strip():
+            return self.session_secret.strip()
+        import secrets
+
+        return secrets.token_hex(32)
 
     def resolve_license_key(self, license_file: str = "config/license.key") -> str:
         """
