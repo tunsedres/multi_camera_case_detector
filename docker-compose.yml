@@ -1,0 +1,20 @@
+services:
+  packing-detector:
+    build: .
+    container_name: packing-detector
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Config dosyası (read-only)
+      - ./config:/app/config:ro
+      # Veritabanı + snapshot'lar (kalıcı)
+      - ./data:/app/data
+      # Loglar
+      - ./logs:/app/logs
+    # Windows Docker Desktop: host network desteklenmez, varsayılan bridge OK
+    # RTSP outbound bağlantı için bridge yeterli, port mapping gerekmez
+    # Linux'ta performans için host network kullanabilirsin:
+    #   network_mode: host
+    environment:
+      - TZ=Europe/Istanbul

@@ -1,0 +1,48 @@
+# Kamera listesi - POC için 1 ile başla, sonra 8'e çıkar
+# RTSP URL'lerinde {user} ve {pass} placeholder'lar .env'den doldurulur
+# Hikvision substream için "/Streaming/Channels/102" kullanıyoruz (düşük çözünürlük, yeterli)
+cameras:
+  - id: 1
+    name: "Masa 1"
+    rtsp: "rtsp://{user}:{pass}@192.168.1.101:554/Streaming/Channels/102"
+    enabled: true
+
+  - id: 2
+    name: "Masa 2"
+    rtsp: "rtsp://{user}:{pass}@192.168.1.102:554/Streaming/Channels/102"
+    enabled: false  # POC için kapalı, sonra aç
+
+  # Diğer 6 kamera için aynı pattern...
+
+detection:
+  # Saniyede kaç frame işle (RTSP 25fps gelir, biz 3 yeterli)
+  target_fps: 3
+
+  # Aynı sipariş bu süre içinde tekrar okunursa yoksay (saniye)
+  dedup_window_seconds: 30
+
+  # Sipariş no regex - Shopify default #1234 formatı
+  # Etikette sadece "1234" varsa bu regex'i ^\d+$ yap
+  order_no_regex: '^#?\d{3,8}$'
+
+  # Tespit edildikten sonra '#' eklemek için (Shopify'da arama '#1234' bekler)
+  add_hash_prefix: true
+
+shopify:
+  # Tespit hangi yollarla Shopify'a yazılsın?
+  write_to_order_note: true     # order.note alanına append
+  write_to_metafield: true      # Yapısal kayıt için metafield
+
+  # Order note'a yazılacak mesaj şablonu
+  note_template: "📦 [{timestamp}] Paketleme: {camera_name} (Kamera #{camera_id})"
+
+storage:
+  # SQLite veritabanı yolu (container içinde)
+  db_path: "/app/data/events.db"
+
+  # Snapshot'lar (tespit anındaki frame görüntüsü)
+  snapshots_enabled: true
+  snapshots_dir: "/app/data/snapshots"
+
+  # Kaç gün sonrasının snapshot'larını sil (0 = silme)
+  snapshot_retention_days: 90
