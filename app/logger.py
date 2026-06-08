@@ -1,6 +1,12 @@
 """
-Logging setup - hem konsola hem dosyaya yazar.
+Logging setup — hem konsola hem dosyaya (rotating) yazar.
+
+Child logger'lar ('packing.worker', 'packing.shopify' vb.) propagate ile bu
+logger'ın handler'larını kullanır; tek noktadan format/rotation yönetilir.
 """
+
+from __future__ import annotations
+
 import logging
 import os
 import sys
@@ -8,9 +14,13 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 
-def setup_logger(name: str = "packing", log_dir: str = "logs") -> logging.Logger:
-    """Hem konsola hem dosyaya yazan logger oluşturur."""
-    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+def setup_logger(
+    name: str = "packing",
+    log_dir: str = "logs",
+    level: str | None = None,
+) -> logging.Logger:
+    """Hem konsola hem dosyaya yazan logger oluşturur (idempotent)."""
+    log_level = (level or os.getenv("LOG_LEVEL", "INFO")).upper()
     Path(log_dir).mkdir(parents=True, exist_ok=True)
 
     logger = logging.getLogger(name)
@@ -25,12 +35,10 @@ def setup_logger(name: str = "packing", log_dir: str = "logs") -> logging.Logger
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # Konsol
     console = logging.StreamHandler(sys.stdout)
     console.setFormatter(fmt)
     logger.addHandler(console)
 
-    # Dosya (10 MB x 5 dosya = ~50 MB log retention)
     file_handler = RotatingFileHandler(
         f"{log_dir}/app.log",
         maxBytes=10 * 1024 * 1024,

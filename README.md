@@ -1,229 +1,223 @@
-# Shopify Paketleme Tespit Sistemi
+# 📦 Packing Detector
 
-Hikvision IP kameralardan RTSP stream alıp, paketleme etiketindeki barkodu okuyarak Shopify siparişine otomatik yorum/metafield ekler.
+Hikvision IP kameralardan RTSP stream alıp paketleme etiketindeki **Code128
+barkodu** okur ve ilgili **Shopify siparişine** "şu kamerada, şu zamanda
+paketlendi" bilgisini otomatik yazar (order note + metafield). Tespit anının
+fotoğrafı kanıt olarak saklanır.
 
-## 📦 Mimari Özet
+Müşteri "eksik/yanlış ürün geldi" dediğinde: Shopify'da siparişi aç → yorumdaki
+kamera ve zamana bak → NVR'da direkt o ana git. **Saatler yerine saniyeler.**
 
-```
-┌──────────────────────────────────────────────────────────┐
-│ Hikvision Kameralar ──RTSP──► NVR (ana kayıt)            │
-│         │                                                 │
-│         └──RTSP (substream)──► Detection Container       │
-│                                       │                   │
-│                                       ▼                   │
-│                          ┌──────────────────────┐        │
-│                          │ 1. Barkod tespit     │        │
-│                          │ 2. SQLite'a kayıt    │        │
-│                          │ 3. Shopify API       │        │
-│                          │ 4. Snapshot sakla    │        │
-│                          └──────────────────────┘        │
-└──────────────────────────────────────────────────────────┘
-```
+Her şey **tek konteynerde, lokal** çalışır — bulut yok, ek donanım yok, internet
+kesilse tespit devam eder (Shopify yazımı kuyruğa alınır).
 
-## ⚙️ Bileşenler
+---
 
-- **`app/camera_worker.py`** — Her kamera için 1 thread, RTSP stream → barkod tespit
-- **`app/shopify_worker.py`** — DB'den pending event'leri çekip Shopify'a yazar (rate-limit-friendly)
-- **`app/storage/database.py`** — SQLite (events + dedup)
-- **`app/storage/snapshots.py`** — Tespit anındaki frame'i JPEG olarak saklar
-- **`app/integrations/shopify_client.py`** — Shopify Admin API (REST)
+## İçindekiler
+- [Mimari](#mimari)
+- [Hızlı başlangıç (Docker)](#hızlı-başlangıç-docker)
+- [Konfigürasyon](#konfigürasyon)
+- [Shopify kurulumu (GraphQL)](#shopify-kurulumu-graphql)
+- [Admin Web Panel](#admin-web-panel)
+- [Lisanslama](#lisanslama)
+- [Geliştirme & test](#geliştirme--test)
+- [Sorun giderme](#sorun-giderme)
+- [Proje yapısı](#proje-yapısı)
 
-## 🚀 Hızlı Başlangıç (Windows 11 + Docker Desktop)
+---
 
-### 1) Hazırlık
-
-```powershell
-# Repo'yu klonla veya kopyala
-cd C:\Users\<sen>\projeler
-git clone <repo-url> shopify-packing-detector
-cd shopify-packing-detector
-```
-
-### 2) Konfigürasyon
-
-```powershell
-# .env oluştur
-copy .env.example .env
-notepad .env
-```
-
-`.env` içine doldur:
+## Mimari
 
 ```
-SHOPIFY_SHOP_URL=magazaniz.myshopify.com
-SHOPIFY_ACCESS_TOKEN=shpat_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
-CAMERA_USERNAME=admin
-CAMERA_PASSWORD=Kamera_Sifreniz
+Hikvision Kameralar ──RTSP──► NVR (ana kayıt, dokunulmaz)
+        │
+        └──RTSP substream──► ┌──────────────── Docker: packing-detector ───────────────┐
+                             │ CameraWorker (kamera/thread) → barkod → dedup → snapshot │
+                             │        → SQLite (pending) → ShopifyWorker → Shopify API   │
+                             │ MaintenanceWorker (retention + lisans)                    │
+                             │ Admin Web Panel (FastAPI) :8080  /health                  │
+                             └───────────────────────────────────────────────────────────┘
+                                                  │
+                                                  ▼
+                                      Shopify GraphQL Admin API
+                                      (order note + metafield)
 ```
 
-`config/config.yaml` içinde kamera IP'lerini gerçek değerlerle değiştir:
+Detaylı mimari ve kararlar: [CLAUDE.md](CLAUDE.md) ·
+**deploy & operasyon: [DEPLOYMENT.md](DEPLOYMENT.md)** ·
+tam proje dokümanı: [shopify-paketleme-tespit-sistemi.md](shopify-paketleme-tespit-sistemi.md)
 
-```yaml
-cameras:
-  - id: 1
-    name: "Masa 1"
-    rtsp: "rtsp://{user}:{pass}@192.168.1.101:554/Streaming/Channels/102"
-    enabled: true
-```
+---
 
-### 3) Shopify Access Token Alma
+## Hızlı başlangıç (Docker)
 
-1. Shopify admin → **Settings** → **Apps and sales channels** → **Develop apps**
-2. **Create an app** → bir isim ver
-3. **Configure Admin API scopes** → şu izinleri seç:
-   - `read_orders` (sipariş arama için)
-   - `write_orders` (note güncelleme için)
-   - `write_order_edits`
-   - `read_order_edits`
-4. **Install app** → **Admin API access token**'ı kopyala (sadece bir kez gösterilir!)
+> Hedef: Windows 11 + Docker Desktop (depodaki Dell PC). Linux'ta da çalışır.
 
-### 4) Önce Bağlantıları Test Et
+```bash
+# 1) Ayarları hazırla
+cp .env.example .env          # Windows: copy .env.example .env
+#   .env içine Shopify token + kamera şifresini yaz
+#   config/config.yaml içinde kamera IP'lerini gerçek değerlerle değiştir
 
-Tam sistemi başlatmadan önce parça parça test et:
-
-**Kamera testi (Docker'sız, native Python ile):**
-
-```powershell
-python -m venv venv
-venv\Scripts\activate
-pip install opencv-python pyzbar numpy
-python scripts\test_camera.py "rtsp://admin:Sifre@192.168.1.101:554/Streaming/Channels/102"
-```
-
-Konsola "BARKOD: 1234" gibi satırlar düşmeli. Düşmüyorsa:
-- Kamera IP'sini ping'le
-- VLC ile aynı URL'i açıp deneme yap
-- Substream (`/102`) çalışmıyorsa main stream (`/101`) dene
-
-**Shopify testi:**
-
-```powershell
-pip install requests python-dotenv
-python scripts\test_shopify.py "#1001"
-```
-
-Shopify dev store'unda gerçek bir sipariş no kullan.
-
-### 5) Docker ile Çalıştır
-
-```powershell
+# 2) Çalıştır
 docker compose up --build -d
 docker compose logs -f
+
+# 3) Admin Panel
+#   http://localhost:8080
 ```
 
-Durdurma:
+Durdurma: `docker compose down`. PC açıldığında otomatik başlaması için Docker
+Desktop "Start with Windows" + compose'daki `restart: unless-stopped` yeterli.
 
-```powershell
-docker compose down
-```
+**Tam sisteme geçmeden önce parça parça test et:** önce VLC ile RTSP URL'i aç,
+sonra `scripts/test_camera.py`, sonra `scripts/test_shopify.py` (bkz.
+[Geliştirme & test](#geliştirme--test)).
 
-## 🔧 Önemli Ayarlar
+---
 
-### Sipariş No Formatı
+## Konfigürasyon
 
-`config/config.yaml`:
+İki dosya:
+
+| Dosya | İçerik | Git'e gider mi |
+|-------|--------|----------------|
+| `.env` | Sırlar: Shopify token, kamera şifresi, web/lisans | ❌ (gitignore) |
+| `config/config.yaml` | Kameralar, tespit, depolama, bakım, izleme | ✅ |
+
+Önemli `config.yaml` ayarları:
 
 ```yaml
 detection:
-  order_no_regex: '^#?\d{3,8}$'    # 3-8 haneli sayı, opsiyonel #
-  add_hash_prefix: true             # Etikette '1234' yazıyorsa, Shopify'da '#1234' ara
+  target_fps: 3                 # saniyede işlenecek frame (CPU yüksekse düşür)
+  dedup_window_seconds: 30      # aynı sipariş+kamera tekrar yoksayma
+  order_no_regex: '^#?\d{3,8}$' # etikette TR-2026-1234 gibi format varsa değiştir
+  add_hash_prefix: true         # '1234' → '#1234' (Shopify araması)
+storage:
+  snapshot_retention_days: 90   # 0 = silme; scheduler otomatik temizler
 ```
 
-Etiketinde özel format varsa (örn `TR-2026-1234`):
+`.env` anahtarları için [.env.example](.env.example)'a bak.
 
-```yaml
-order_no_regex: '^TR-\d{4}-\d+$'
-add_hash_prefix: false
+---
+
+## Shopify kurulumu (GraphQL)
+
+Bu sürüm Shopify **GraphQL Admin API** kullanır (REST Orders API deprecate
+ediliyor).
+
+1. Shopify admin → **Settings → Apps and sales channels → Develop apps**
+2. **Create an app** → isim ver (örn. "Packing Detector")
+3. **Configure Admin API scopes**: `read_orders`, `write_orders`
+4. **Install app** → **Admin API access token**'ı kopyala (yalnızca bir kez gösterilir!)
+5. `.env`:
+   ```
+   SHOPIFY_SHOP_URL=magazaniz.myshopify.com
+   SHOPIFY_ACCESS_TOKEN=shpat_xxxxxxxx
+   SHOPIFY_API_VERSION=2025-01
+   ```
+
+Bağlantıyı doğrula: `python scripts/test_shopify.py` (token testi) ·
+`python scripts/test_shopify.py "#1001"` (gerçek siparişe test yorumu).
+
+---
+
+## Admin Web Panel
+
+`http://localhost:8080` (port `.env` `WEB_PORT` ile değişir).
+
+- **Dashboard**: bugünkü/toplam tespit, bekleyen Shopify, kamera sağlık durumu,
+  lisans, son tespitler
+- **Olaylar**: sipariş no / kamera / durum / tarih ile arama + sayfalama
+- **Olay detayı**: snapshot önizleme + "Shopify'a tekrar yaz" (not_found/failed için)
+- **`/health`**: kimlik doğrulamasız JSON (Docker healthcheck / dış izleme)
+
+Kimlik doğrulama: `.env`'de `ADMIN_PASSWORD` tanımlıysa HTTP Basic devreye girer.
+Boşsa panel açık (yalnızca güvenli LAN için). Panel **tamamen offline** çalışır
+(CDN yok).
+
+---
+
+## Lisanslama
+
+Ürün, **offline Ed25519 imzalı lisans anahtarı** ile korunur (internetsiz depoda
+da çalışır). Satıcı private key ile imzalar; uygulama gömülü public key ile
+doğrular.
+
+**Satıcı (bir kez):**
+```bash
+python scripts/generate_license.py keygen          # anahtar çifti üret
+#   → private key: config/private_key.pem (GİZLİ, yedekle, paylaşma)
+#   → public key:  app/licensing/keys.py'ye otomatik yazılır
 ```
 
-### Dedup Penceresi
-
-Aynı sipariş aynı kamerada art arda okunmasın diye:
-
-```yaml
-detection:
-  dedup_window_seconds: 30  # 30 saniye içinde tekrar okunursa yoksay
+**Her müşteri için lisans üret:**
+```bash
+python scripts/generate_license.py issue --customer "ACME Lojistik" --cameras 8 --days 365
 ```
 
-### FPS Ayarı
+**Müşteri kurulumu:** üretilen anahtarı `.env`'e `LICENSE_KEY=...` ya da
+`config/license.key` dosyasına koy. Zorunlu kılmak için `.env`'de
+`LICENSE_ENFORCE=true` (geçersiz/eksik lisansta sistem başlamaz).
+`false` iken (varsayılan geliştirme) sadece uyarı verir.
 
-```yaml
-detection:
-  target_fps: 3  # Saniyede kaç frame işle (kamera 25 FPS gönderir, biz 3'ünü işleriz)
+---
+
+## Geliştirme & test
+
+```bash
+# Sistem (pyzbar/opencv için): libzbar0, libgl1, libglib2.0-0, ffmpeg
+pip install -r requirements-dev.txt
+
+ruff check . && ruff format --check .
+pytest                       # cv2/pyzbar yoksa barkod testleri atlanır
 ```
 
-Yüksek FPS = daha hızlı tespit ama daha fazla CPU. 3-5 FPS paketleme için ideal.
+**Sıralı doğrulama (saha kurulumu):**
+1. **VLC** ile RTSP URL aç — görüntü geliyor mu?
+2. `python scripts/test_camera.py "rtsp://admin:SIFRE@192.168.1.101:554/Streaming/Channels/102"`
+   — barkodu kameraya göster, konsola düşmeli.
+3. `python scripts/test_shopify.py "#1001"` — Shopify Timeline'a test yorumu.
+4. `docker compose up --build -d` — tam sistem.
 
-## 📂 Klasör Yapısı
+---
+
+## Sorun giderme
+
+| Belirti | Bak |
+|---------|-----|
+| "Stream açılamadı" | VLC ile URL'i dene · `ping <ip>` · RTSP yetkili kullanıcı · şifrede özel karakter varsa URL-encode · substream yerine `/101` |
+| Barkod okunmuyor | etiket küçük/eğik/bulanık mı · ışık · `target_fps` artır · ana stream'e geç |
+| Shopify'a yazılmıyor | `docker compose logs` · Panel → Olaylar → durum `not_found` (regex/sipariş yok) ya da `failed` (API hatası) |
+| Çok false-positive | `dedup_window_seconds` artır · `order_no_regex` daralt · ürün barkodları karışıyor olabilir |
+| Yüksek CPU | `target_fps` düşür · substream (`/102`) kullan · kapalı kameraları `enabled: false` |
+| Kamera sessizce düştü | Dashboard'da kamera durumu `stale`/`down` · `/health` JSON |
+
+---
+
+## Proje yapısı
 
 ```
-shopify-packing-detector/
-├── app/
-│   ├── main.py                   # Entry point
-│   ├── camera_worker.py          # Her kamera için thread
-│   ├── shopify_worker.py         # Shopify queue consumer
-│   ├── config.py
-│   ├── logger.py
-│   ├── detection/
-│   │   └── barcode.py            # pyzbar wrapper
-│   ├── integrations/
-│   │   └── shopify_client.py     # Admin API
-│   └── storage/
-│       ├── database.py           # SQLite
-│       └── snapshots.py          # Frame kaydetme
-├── config/
-│   └── config.yaml               # Kamera listesi, ayarlar
-├── scripts/
-│   ├── test_camera.py            # Tek kamera + barkod testi
-│   └── test_shopify.py           # Shopify bağlantı testi
-├── data/                         # SQLite + snapshot'lar (runtime)
-├── logs/                         # Uygulama logları
-├── Dockerfile
-├── docker-compose.yml
-├── requirements.txt
-├── .env                          # Sırlar (git'e gitmez)
-└── .env.example
+app/
+├── app.py                 # orchestrator (Application)
+├── main.py / healthcheck.py
+├── settings.py            # .env (pydantic-settings)
+├── config.py              # config.yaml (pydantic)
+├── camera_worker.py · shopify_worker.py · scheduler.py · logger.py
+├── detection/barcode.py
+├── integrations/shopify_client.py   # GraphQL
+├── storage/{database,snapshots}.py
+├── licensing/{license,keys}.py
+├── monitoring/health.py
+└── web/                   # FastAPI panel (routes, server, security, templates, static)
+config/config.yaml
+scripts/{test_camera,test_shopify,generate_license}.py
+tests/                     # pytest
+Dockerfile · docker-compose.yml · requirements*.txt · pyproject.toml
+.github/workflows/ci.yml
 ```
 
-## 🐛 Yaygın Sorunlar
+---
 
-### "Stream açılamadı"
-
-1. VLC ile aynı RTSP URL'i açıp dene
-2. `ping <kamera_ip>` çalışıyor mu?
-3. Kamera kullanıcısı RTSP yetkisi var mı? (Hikvision admin paneli)
-4. Şifrede özel karakter (`@`, `:`, `/`) varsa URL-encode et
-
-### "Barkod okunuyor ama Shopify'a yazılmıyor"
-
-```powershell
-# Logları kontrol et
-docker compose logs --tail=100
-
-# DB'de pending event var mı?
-docker compose exec packing-detector sqlite3 /app/data/events.db \
-  "SELECT order_no, shopify_status, shopify_error FROM events ORDER BY id DESC LIMIT 20;"
-```
-
-`shopify_status='not_found'` görüyorsan: Shopify'da o sipariş yok ya da `status=any` dahi bulamıyor → manuel kontrol.
-
-### Çok fazla false-positive
-
-- `dedup_window_seconds` artır
-- `order_no_regex` daraltacak şekilde değiştir (örn min 4 hane)
-- Kamera açısını gözden geçir (etiket dik olmalı, parlama olmamalı)
-
-### CPU çok yüksek
-
-- `target_fps` azalt (3 → 2)
-- Mainstream yerine substream kullandığından emin ol (`Channels/102`)
-
-## 🔜 Sonraki Adımlar
-
-POC çalışıyorsa şunları ekle:
-
-- [ ] **Admin Panel**: Sipariş no ile arama, snapshot önizleme, NVR playback link'i
-- [ ] **NVR ISAPI entegrasyonu**: Shopify yorumunda doğrudan tıklanabilir kayıt link'i
-- [ ] **Monitoring**: Her kameranın son tespit zamanı, healthcheck endpoint
-- [ ] **Bulk fix**: Geriye dönük tespitleri (snapshot + DB) sonradan Shopify'a yazma aracı
-- [ ] **YOLO ROI tespiti**: pyzbar yetmediğinde GPU ile barkod konumu bul, kırp, decode et
+**Lisans:** Proprietary. Tüm bileşenler açık kaynak kütüphanelerle, sıfır ek
+donanım maliyetiyle mevcut altyapı üzerine kurulur.

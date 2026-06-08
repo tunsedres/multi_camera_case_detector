@@ -1,0 +1,38 @@
+[project]
+name = "packing-detector"
+version = "1.0.0"
+description = "Hikvision RTSP kameralardan paketleme barkodu okuyup Shopify siparişine otomatik kayıt düşen lokal tespit sistemi"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+authors = [{ name = "Tuncay" }]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["data", "logs", "release"]
+
+[tool.ruff.lint]
+# E/F: pyflakes+pycodestyle, I: isort, B: bugbear, UP: pyupgrade, C4: comprehensions
+select = ["E", "F", "I", "B", "UP", "C4", "W"]
+ignore = [
+    "E501",  # satır uzunluğu formatter'a bırakılıyor
+    "B008",  # FastAPI Depends() default argümanları
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+# Standalone script'ler: cv2/dotenv'i ortam ayarından/path enjeksiyonundan sonra
+# import etmek meşru → E402 muaf.
+"scripts/*" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+filterwarnings = ["ignore::DeprecationWarning"]
+markers = [
+    "integration: gerçek donanım/ağ gerektiren testler (CI'da atlanır)",
+]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/web/server.py", "*/__init__.py"]

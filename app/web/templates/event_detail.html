@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Olay #{{ event.id }} · Packing Detector{% endblock %}
+
+{% block content %}
+<p><a class="btn-link" href="/events">← Olaylar</a></p>
+<h1>Olay #{{ event.id }} — {{ event.order_no }}</h1>
+
+<div class="grid-2">
+  <section class="panel">
+    <h2>Bilgiler</h2>
+    <dl class="kv">
+      <dt>Sipariş no</dt><dd><strong>{{ event.order_no }}</strong></dd>
+      <dt>Kamera</dt><dd>{{ event.camera_name }} (#{{ event.camera_id }})</dd>
+      <dt>Tespit zamanı</dt><dd>{{ event.detected_at | dt }}</dd>
+      <dt>Shopify durumu</dt>
+      <dd><span class="badge {{ event.shopify_status | status_css }}">{{ event.shopify_status | status_tr }}</span></dd>
+      <dt>Senkron zamanı</dt><dd>{{ event.shopify_synced_at | dt }}</dd>
+      <dt>Retry</dt><dd>{{ event.retry_count }}</dd>
+      {% if event.shopify_error %}<dt>Hata</dt><dd class="muted">{{ event.shopify_error }}</dd>{% endif %}
+    </dl>
+
+    {% if event.shopify_status in ['failed', 'not_found'] %}
+    <form method="post" action="/events/{{ event.id }}/retry">
+      <button type="submit">Shopify'a tekrar yaz</button>
+    </form>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>Snapshot (kanıt)</h2>
+    {% if event.snapshot_path %}
+      <a href="/events/{{ event.id }}/snapshot" target="_blank">
+        <img class="snapshot" src="/events/{{ event.id }}/snapshot" alt="snapshot">
+      </a>
+      <p class="muted">{{ event.snapshot_path }}</p>
+    {% else %}
+      <p class="muted">Snapshot kaydı yok.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

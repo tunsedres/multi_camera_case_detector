@@ -5,6 +5,7 @@ Kullanım: python scripts/test_camera.py rtsp://admin:sifre@192.168.1.101:554/St
 Penceresiz çalışır, sadece konsola log basar.
 Geliştirme aşamasında bağlantı ve barkod tespitini doğrulamak için.
 """
+
 import os
 import sys
 import time
@@ -20,7 +21,9 @@ from pyzbar import pyzbar
 def main():
     if len(sys.argv) < 2:
         print("Kullanım: python test_camera.py <rtsp_url>")
-        print("Örnek:    python test_camera.py rtsp://admin:Sifre@192.168.1.101:554/Streaming/Channels/102")
+        print(
+            "Örnek:    python test_camera.py rtsp://admin:Sifre@192.168.1.101:554/Streaming/Channels/102"
+        )
         sys.exit(1)
 
     rtsp_url = sys.argv[1]

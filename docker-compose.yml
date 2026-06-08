@@ -5,16 +5,25 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    ports:
+      # Admin Web Panel (WEB_PORT ile değiştirilebilir)
+      - "8080:8080"
     volumes:
-      # Config dosyası (read-only)
+      # Config + lisans dosyası (read-only)
       - ./config:/app/config:ro
       # Veritabanı + snapshot'lar (kalıcı)
       - ./data:/app/data
       # Loglar
       - ./logs:/app/logs
-    # Windows Docker Desktop: host network desteklenmez, varsayılan bridge OK
-    # RTSP outbound bağlantı için bridge yeterli, port mapping gerekmez
-    # Linux'ta performans için host network kullanabilirsin:
-    #   network_mode: host
     environment:
       - TZ=Europe/Istanbul
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    # Windows Docker Desktop: bridge (varsayılan) çalışır, RTSP outbound sorunsuz.
+    # Linux'ta ağ performansı için host network kullanılabilir (o durumda 'ports'
+    # satırını kaldır, çünkü host network'te port mapping yoktur):
+    #   network_mode: host

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Packing Detector{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">📦</span>
+      <span>Packing Detector</span>
+    </div>
+    <nav>
+      <a href="/">Dashboard</a>
+      <a href="/events">Olaylar</a>
+    </nav>
+    <div class="topbar-right">
+      <span id="health-badge" class="badge badge-pending">●</span>
+      <span class="muted">v{{ version }}</span>
+    </div>
+  </header>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer muted">
+    Packing Detector — lokal tespit sistemi · {{ version }}
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

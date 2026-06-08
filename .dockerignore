@@ -1,0 +1,37 @@
+# Git
+.git
+.github
+.gitignore
+
+# Runtime verisi (image'a girmez, volume olarak bağlanır)
+data/
+logs/
+*.db
+*.db-wal
+*.db-shm
+
+# Sırlar
+.env
+config/license.key
+config/private_key.pem
+*.pem
+
+# Python cache / venv
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Geliştirme / test (image'a gerekmez)
+tests/
+scripts/
+*.md
+*.zip
+release/
+.vscode/
+.idea/
+.DS_Store

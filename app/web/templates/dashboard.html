@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Packing Detector{% endblock %}
+
+{% block content %}
+<h1>Dashboard</h1>
+
+<section class="cards">
+  <div class="card">
+    <div class="card-label">Bugünkü tespit</div>
+    <div class="card-value">{{ stats.today }}</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Toplam tespit</div>
+    <div class="card-value">{{ stats.total }}</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Shopify bekleyen</div>
+    <div class="card-value {% if stats.pending %}warn{% endif %}">{{ stats.pending }}</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Kamera (ok / toplam)</div>
+    <div class="card-value">{{ health.cameras_ok }} / {{ health.cameras_total }}</div>
+  </div>
+</section>
+
+<div class="grid-2">
+  <section class="panel">
+    <h2>Kameralar</h2>
+    <table class="table">
+      <thead><tr><th>#</th><th>İsim</th><th>Durum</th><th>Son frame</th><th>Tespit</th><th>Reconnect</th></tr></thead>
+      <tbody>
+      {% for c in health.cameras %}
+        <tr>
+          <td>{{ c.camera_id }}</td>
+          <td>{{ c.camera_name }}</td>
+          <td><span class="badge {{ c.status | status_css }}">{{ c.status }}</span></td>
+          <td>{{ c.last_frame_at | dt }}</td>
+          <td>{{ c.detections }}</td>
+          <td>{{ c.reconnects }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="muted">Kamera yok</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="panel">
+    <h2>Sistem</h2>
+    <dl class="kv">
+      <dt>Genel durum</dt><dd><span class="badge {{ health.status | status_css }}">{{ health.status }}</span></dd>
+      <dt>Çalışma süresi</dt><dd>{{ (health.uptime_seconds // 3600) }}s {{ (health.uptime_seconds % 3600 // 60) }}dk</dd>
+      <dt>Lisans</dt><dd>{{ health.license.status }}{% if health.license.customer %} · {{ health.license.customer }}{% endif %}</dd>
+      {% if health.license.days_remaining is not none %}<dt>Lisans kalan gün</dt><dd>{{ health.license.days_remaining }}</dd>{% endif %}
+      <dt>Shopify başarılı</dt><dd>{{ health.shopify.success_total }}</dd>
+      <dt>Shopify hata</dt><dd>{{ health.shopify.failed_total }} (sipariş yok: {{ health.shopify.not_found_total }})</dd>
+      <dt>Son Shopify hatası</dt><dd class="muted">{{ health.shopify.last_error or "—" }}</dd>
+    </dl>
+  </section>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Son tespitler</h2>
+    <a class="btn-link" href="/events">Tümü →</a>
+  </div>
+  {% set events = recent %}
+  {% include "_events_table.html" %}
+</section>
+{% endblock %}

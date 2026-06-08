@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Olaylar · Packing Detector{% endblock %}
+
+{% block content %}
+<h1>Olaylar</h1>
+
+<form class="filters" method="get" action="/events">
+  <input type="text" name="order_no" placeholder="Sipariş no" value="{{ filters.order_no or '' }}">
+  <select name="camera_id">
+    <option value="">Tüm kameralar</option>
+    {% for c in cameras %}
+      <option value="{{ c.id }}" {% if filters.camera_id == c.id %}selected{% endif %}>{{ c.name }} (#{{ c.id }})</option>
+    {% endfor %}
+  </select>
+  <select name="status">
+    <option value="">Tüm durumlar</option>
+    {% for s in status_options %}
+      <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s | status_tr }}</option>
+    {% endfor %}
+  </select>
+  <input type="date" name="date_from" value="{{ filters.date_from or '' }}">
+  <input type="date" name="date_to" value="{{ filters.date_to or '' }}">
+  <button type="submit">Ara</button>
+  <a class="btn-link" href="/events">Temizle</a>
+</form>
+
+<p class="muted">{{ total }} kayıt · sayfa {{ page }} / {{ pages }}</p>
+
+{% include "_events_table.html" %}
+
+{% if pages > 1 %}
+<div class="pagination">
+  {% set qs = "" %}
+  {% if filters.order_no %}{% set qs = qs + "&order_no=" + filters.order_no %}{% endif %}
+  {% if filters.camera_id %}{% set qs = qs + "&camera_id=" + (filters.camera_id|string) %}{% endif %}
+  {% if filters.status %}{% set qs = qs + "&status=" + filters.status %}{% endif %}
+  {% if filters.date_from %}{% set qs = qs + "&date_from=" + filters.date_from %}{% endif %}
+  {% if filters.date_to %}{% set qs = qs + "&date_to=" + filters.date_to %}{% endif %}
+  {% if page > 1 %}<a class="btn-link" href="/events?page={{ page-1 }}{{ qs }}">← Önceki</a>{% endif %}
+  <span class="muted">{{ page }} / {{ pages }}</span>
+  {% if page < pages %}<a class="btn-link" href="/events?page={{ page+1 }}{{ qs }}">Sonraki →</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

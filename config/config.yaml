@@ -1,6 +1,12 @@
-# Kamera listesi - POC için 1 ile başla, sonra 8'e çıkar
-# RTSP URL'lerinde {user} ve {pass} placeholder'lar .env'den doldurulur
-# Hikvision substream için "/Streaming/Channels/102" kullanıyoruz (düşük çözünürlük, yeterli)
+# ============================================================
+#  Packing Detector — Ana Konfigürasyon
+#  Sırlar (token, şifre) burada DEĞİL .env içinde tutulur.
+#  RTSP URL'lerindeki {user}/{pass} .env'deki CAMERA_* ile doldurulur.
+# ============================================================
+
+# ---- Kameralar ----
+# POC için 1 kamera ile başla, doğrulayınca diğerlerini aç.
+# Hikvision substream: "/Streaming/Channels/<kanal>2" (düşük çözünürlük, barkod için yeterli)
 cameras:
   - id: 1
     name: "Masa 1"
@@ -10,39 +16,70 @@ cameras:
   - id: 2
     name: "Masa 2"
     rtsp: "rtsp://{user}:{pass}@192.168.1.102:554/Streaming/Channels/102"
-    enabled: false  # POC için kapalı, sonra aç
+    enabled: false
 
-  # Diğer 6 kamera için aynı pattern...
+  - id: 3
+    name: "Masa 3"
+    rtsp: "rtsp://{user}:{pass}@192.168.1.103:554/Streaming/Channels/102"
+    enabled: false
 
+  - id: 4
+    name: "Masa 4"
+    rtsp: "rtsp://{user}:{pass}@192.168.1.104:554/Streaming/Channels/102"
+    enabled: false
+
+  - id: 5
+    name: "Masa 5"
+    rtsp: "rtsp://{user}:{pass}@192.168.1.105:554/Streaming/Channels/102"
+    enabled: false
+
+  - id: 6
+    name: "Masa 6"
+    rtsp: "rtsp://{user}:{pass}@192.168.1.106:554/Streaming/Channels/102"
+    enabled: false
+
+  - id: 7
+    name: "Masa 7"
+    rtsp: "rtsp://{user}:{pass}@192.168.1.107:554/Streaming/Channels/102"
+    enabled: false
+
+  - id: 8
+    name: "Masa 8"
+    rtsp: "rtsp://{user}:{pass}@192.168.1.108:554/Streaming/Channels/102"
+    enabled: false
+
+# ---- Tespit ----
 detection:
-  # Saniyede kaç frame işle (RTSP 25fps gelir, biz 3 yeterli)
-  target_fps: 3
+  target_fps: 3                    # Saniyede işlenecek frame (kamera 25 gönderir)
+  dedup_window_seconds: 30         # Aynı sipariş+kamera bu süre içinde tekrar yoksayılır
+  order_no_regex: '^#?\d{3,8}$'    # Sipariş no formatı; etikette sadece sayı varsa '^\d+$'
+  add_hash_prefix: true            # '1234' -> '#1234' (Shopify araması '#1234' bekler)
+  # Hangi barkod tipleri taransın (boş = pyzbar varsayılanı, hepsi)
+  symbols: ["CODE128", "QRCODE"]
 
-  # Aynı sipariş bu süre içinde tekrar okunursa yoksay (saniye)
-  dedup_window_seconds: 30
-
-  # Sipariş no regex - Shopify default #1234 formatı
-  # Etikette sadece "1234" varsa bu regex'i ^\d+$ yap
-  order_no_regex: '^#?\d{3,8}$'
-
-  # Tespit edildikten sonra '#' eklemek için (Shopify'da arama '#1234' bekler)
-  add_hash_prefix: true
-
+# ---- Shopify ----
 shopify:
-  # Tespit hangi yollarla Shopify'a yazılsın?
-  write_to_order_note: true     # order.note alanına append
-  write_to_metafield: true      # Yapısal kayıt için metafield
-
-  # Order note'a yazılacak mesaj şablonu
+  write_to_order_note: true        # order.note alanına append
+  write_to_metafield: true         # Yapısal kayıt için metafield
+  metafield_namespace: "packing"
   note_template: "📦 [{timestamp}] Paketleme: {camera_name} (Kamera #{camera_id})"
+  poll_interval_seconds: 2.0       # ShopifyWorker pending tarama aralığı
+  max_retries: 5                   # Başarısız event kaç kez tekrar denensin
 
+# ---- Depolama ----
 storage:
-  # SQLite veritabanı yolu (container içinde)
-  db_path: "/app/data/events.db"
-
-  # Snapshot'lar (tespit anındaki frame görüntüsü)
+  db_path: "data/events.db"
   snapshots_enabled: true
-  snapshots_dir: "/app/data/snapshots"
+  snapshots_dir: "data/snapshots"
+  snapshot_retention_days: 90      # 0 = silme
+  jpeg_quality: 85
 
-  # Kaç gün sonrasının snapshot'larını sil (0 = silme)
-  snapshot_retention_days: 90
+# ---- Bakım (scheduler) ----
+maintenance:
+  cleanup_interval_hours: 6        # Retention temizliği kaç saatte bir çalışsın
+  license_recheck_hours: 12        # Lisans süre/geçerlilik yeniden kontrol aralığı
+
+# ---- İzleme / sağlık ----
+monitoring:
+  # Bir kamera bu kadar saniye frame üretmezse "stale/down" sayılır
+  camera_stale_seconds: 60

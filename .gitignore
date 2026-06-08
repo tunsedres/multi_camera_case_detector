@@ -1,1 +1,51 @@
-.DS_STORE
+# ---- Sırlar / secrets ----
+.env
+*.env
+!.env.example
+config/license.key
+*.pem
+private_key*
+
+# ---- Runtime verisi (asla commit edilmez) ----
+data/
+logs/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.Python
+
+# ---- Test / lint cache ----
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.mypy_cache/
+
+# ---- IDE / OS ----
+.idea/
+.vscode/
+*.swp
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+# ---- Paketleme artefaktları ----
+*.zip
+*.tar.gz
+release/

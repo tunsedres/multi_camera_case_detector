@@ -1,0 +1,19 @@
+<table class="table">
+  <thead>
+    <tr><th>#</th><th>Sipariş</th><th>Kamera</th><th>Tespit zamanı</th><th>Shopify</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for e in events %}
+    <tr>
+      <td>{{ e.id }}</td>
+      <td><strong>{{ e.order_no }}</strong></td>
+      <td>{{ e.camera_name }} <span class="muted">(#{{ e.camera_id }})</span></td>
+      <td>{{ e.detected_at | dt }}</td>
+      <td><span class="badge {{ e.shopify_status | status_css }}">{{ e.shopify_status | status_tr }}</span></td>
+      <td><a class="btn-link" href="/events/{{ e.id }}">Detay</a></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">Kayıt yok</td></tr>
+  {% endfor %}
+  </tbody>
+</table>

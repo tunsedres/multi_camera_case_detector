@@ -1,58 +1,64 @@
 """
-Shopify bağlantı testi.
-Kullanım: python scripts/test_shopify.py "#1001"
+Shopify bağlantı + yazma testi (GraphQL).
 
-Verilen sipariş no'yu arar, bulursa test yorumu ekler.
+Kullanım:
+    python scripts/test_shopify.py                 # sadece bağlantı testi
+    python scripts/test_shopify.py "#1001"         # sipariş bul + test yorumu ekle
+
+.env içinde SHOPIFY_SHOP_URL ve SHOPIFY_ACCESS_TOKEN dolu olmalı.
 """
+
 import sys
-import os
 from datetime import datetime
 from pathlib import Path
 
-# app modülüne erişebilmek için parent dir'i path'e ekle
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from dotenv import load_dotenv
-load_dotenv()
+from dotenv import load_dotenv  # noqa: E402
 
-from app.integrations.shopify_client import ShopifyClient, OrderNotFound
+from app.integrations.shopify_client import OrderNotFound, ShopifyClient  # noqa: E402
+from app.settings import get_settings  # noqa: E402
 
 
-def main():
+def main() -> int:
+    load_dotenv()
+    s = get_settings()
+    if not s.shopify_shop_url or not s.shopify_access_token:
+        print("❌ .env'de SHOPIFY_SHOP_URL ve SHOPIFY_ACCESS_TOKEN gerekli!")
+        return 1
+
+    client = ShopifyClient(
+        shop_url=s.shopify_shop_url,
+        access_token=s.shopify_access_token,
+        api_version=s.shopify_api_version,
+    )
+
+    print(f"Shopify: {s.shopify_shop_url}  (API {s.shopify_api_version})")
+    try:
+        shop = client.test_connection()
+        print(f"✓ Bağlantı OK — mağaza: {shop.get('name')} ({shop.get('myshopifyDomain')})")
+    except Exception as e:  # noqa: BLE001
+        print(f"❌ Bağlantı/token hatası: {e}")
+        return 1
+
     if len(sys.argv) < 2:
-        print("Kullanım: python test_shopify.py <sipariş_no>")
-        print("Örnek:    python test_shopify.py '#1001'")
-        sys.exit(1)
+        print("\nSipariş testi için: python scripts/test_shopify.py '#1001'")
+        return 0
 
     order_no = sys.argv[1]
-
-    shop_url = os.getenv("SHOPIFY_SHOP_URL")
-    token = os.getenv("SHOPIFY_ACCESS_TOKEN")
-
-    if not shop_url or not token:
-        print("❌ .env dosyasında SHOPIFY_SHOP_URL ve SHOPIFY_ACCESS_TOKEN gerekli!")
-        sys.exit(1)
-
-    print(f"Shopify: {shop_url}")
-    print(f"Sipariş aranıyor: {order_no}")
-
-    client = ShopifyClient(shop_url=shop_url, access_token=token)
-
+    print(f"\nSipariş aranıyor: {order_no}")
     try:
         order = client.find_order_by_name(order_no)
         if not order:
-            print(f"❌ Sipariş bulunamadı: {order_no}")
-            print("   Shopify admin'de bu sipariş var mı?")
-            sys.exit(1)
+            print(f"❌ Sipariş bulunamadı: {order_no} (Shopify admin'de var mı?)")
+            return 1
 
-        print(f"✓ Sipariş bulundu: id={order['id']}, name={order['name']}")
+        print(f"✓ Bulundu: {order['name']} (id={order['id']})")
         print(f"  Mevcut not: {order.get('note') or '(boş)'}")
-        print()
 
-        confirm = input("Test yorumu eklensin mi? (e/h): ").strip().lower()
-        if confirm != "e":
+        if input("\nTest yorumu eklensin mi? (e/h): ").strip().lower() != "e":
             print("İptal edildi.")
-            return
+            return 0
 
         client.log_packing_event(
             order_no=order_no,
@@ -60,19 +66,16 @@ def main():
             camera_name="TEST",
             timestamp=datetime.now(),
             note_template="🧪 [{timestamp}] TEST: {camera_name} (Kamera #{camera_id})",
-            write_note=True,
-            write_metafield=True,
         )
-
-        print("✓ Test yorumu eklendi. Shopify admin > Orders > {order_no} > Timeline'a bak.")
-
+        print("✓ Eklendi. Shopify admin > Orders > Timeline'a bak.")
+        return 0
     except OrderNotFound as e:
         print(f"❌ {e}")
-        sys.exit(1)
-    except Exception as e:
+        return 1
+    except Exception as e:  # noqa: BLE001
         print(f"❌ Hata: {e}")
-        sys.exit(1)
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
