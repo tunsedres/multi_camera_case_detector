@@ -151,11 +151,7 @@ class Application:
         self.logger.info("%s kamera worker'ı hazırlandı", len(self._workers))
 
         sh = self.config.shopify
-        shopify_client = ShopifyClient(
-            shop_url=self.settings.shopify_shop_url,
-            access_token=self.settings.shopify_access_token,
-            api_version=self.settings.shopify_api_version,
-        )
+        shopify_client = ShopifyClient.from_settings(self.settings)
         self._workers.append(
             ShopifyWorker(
                 db=self.db,
@@ -201,8 +197,14 @@ class Application:
         self.logger.info("Packing Detector v%s başlıyor", __version__)
         self.logger.info("=" * 60)
 
-        if not self.settings.shopify_access_token:
-            self.logger.error("SHOPIFY_ACCESS_TOKEN .env'de tanımlı değil!")
+        if not self.settings.shopify_shop_url:
+            self.logger.error("SHOPIFY_SHOP_URL .env'de tanımlı değil!")
+            sys.exit(1)
+        if not (self.settings.shopify_access_token or self.settings.shopify_use_client_credentials):
+            self.logger.error(
+                "Shopify kimlik bilgisi yok: SHOPIFY_ACCESS_TOKEN ya da "
+                "SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET tanımla!"
+            )
             sys.exit(1)
 
         self._enforce_license_or_exit()

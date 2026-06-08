@@ -21,6 +21,8 @@ from datetime import datetime
 
 import requests
 
+from app.integrations.shopify_auth import ShopifyAuthError, TokenProvider
+
 logger = logging.getLogger("packing.shopify")
 
 DEFAULT_API_VERSION = "2025-01"
@@ -68,24 +70,57 @@ class ShopifyClient:
     def __init__(
         self,
         shop_url: str,
-        access_token: str,
+        access_token: str | None = None,
         api_version: str = DEFAULT_API_VERSION,
         timeout: int = 15,
         min_available_points: int = 100,
+        token_provider: TokenProvider | None = None,
     ):
-        if not shop_url or not access_token:
-            raise ValueError("Shopify shop_url ve access_token gerekli")
+        if not shop_url:
+            raise ValueError("Shopify shop_url gerekli")
+        if not access_token and token_provider is None:
+            raise ValueError("Shopify access_token veya token_provider gerekli")
 
         self.endpoint = f"https://{shop_url}/admin/api/{api_version}/graphql.json"
         self.timeout = timeout
         self.min_available_points = min_available_points
+        self.token_provider = token_provider
+        self._static_token = access_token
         self.session = requests.Session()
         self.session.headers.update(
             {
-                "X-Shopify-Access-Token": access_token,
                 "Content-Type": "application/json",
                 "Accept": "application/json",
             }
+        )
+
+    def _auth_token(self) -> str:
+        """Geçerli token: provider varsa ondan (önbellekli/yenilenen), yoksa statik."""
+        if self.token_provider is not None:
+            return self.token_provider.get_token()
+        return self._static_token  # type: ignore[return-value]
+
+    @classmethod
+    def from_settings(cls, settings) -> ShopifyClient:
+        """
+        Settings'ten client kur. client_id+secret varsa otomatik token akışı
+        (TokenProvider) kullanılır; yoksa statik SHOPIFY_ACCESS_TOKEN'a düşülür.
+        """
+        if settings.shopify_use_client_credentials:
+            provider = TokenProvider(
+                shop_url=settings.shopify_shop_url,
+                client_id=settings.shopify_client_id,
+                client_secret=settings.shopify_client_secret,
+            )
+            return cls(
+                shop_url=settings.shopify_shop_url,
+                api_version=settings.shopify_api_version,
+                token_provider=provider,
+            )
+        return cls(
+            shop_url=settings.shopify_shop_url,
+            access_token=settings.shopify_access_token,
+            api_version=settings.shopify_api_version,
         )
 
     # ------------------------------------------------------------------ #
@@ -93,21 +128,41 @@ class ShopifyClient:
     # ------------------------------------------------------------------ #
     def _graphql(self, query: str, variables: dict, max_retries: int = 4) -> dict:
         payload = {"query": query, "variables": variables}
+        token_refreshed = False  # token_provider'da 401 sonrası bir kez tazele
 
         for attempt in range(max_retries):
             try:
-                resp = self.session.post(self.endpoint, json=payload, timeout=self.timeout)
+                token = self._auth_token()
+            except ShopifyAuthError as e:
+                raise ShopifyError(f"Token alınamadı: {e}") from e
+
+            headers = {"X-Shopify-Access-Token": token}
+            try:
+                resp = self.session.post(
+                    self.endpoint, json=payload, headers=headers, timeout=self.timeout
+                )
             except requests.RequestException as e:
                 if attempt == max_retries - 1:
                     raise ShopifyError(f"Ağ hatası: {e}") from e
                 time.sleep(2**attempt)
                 continue
 
-            # 401/403 — kimlik/scope sorunu, retry anlamsız
-            if resp.status_code in (401, 403):
-                raise ShopifyError(
-                    f"Yetki hatası ({resp.status_code}): access token / scope kontrol et"
-                )
+            # 401 — token süresi dolmuş olabilir. Provider varsa bir kez tazele
+            # ve yeniden dene; statik token'da ya da ikinci 401'de hata ver.
+            if resp.status_code == 401:
+                if self.token_provider is not None and not token_refreshed:
+                    logger.warning("HTTP 401 — Shopify token tazeleniyor")
+                    try:
+                        self.token_provider.invalidate()
+                    except ShopifyAuthError as e:
+                        raise ShopifyError(f"Token tazelenemedi: {e}") from e
+                    token_refreshed = True
+                    continue
+                raise ShopifyError("Yetki hatası (401): access token / scope kontrol et")
+
+            # 403 — scope/yetki sorunu, token tazelemek çözmez
+            if resp.status_code == 403:
+                raise ShopifyError("Yetki hatası (403): access token / scope kontrol et")
 
             # 429 — nadiren (GraphQL genelde 200+THROTTLED döner)
             if resp.status_code == 429:

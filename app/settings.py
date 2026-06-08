@@ -28,8 +28,18 @@ class Settings(BaseSettings):
 
     # ---- Shopify ----
     shopify_shop_url: str = ""
+    # Statik Admin API token (shpat_...). client_credentials kullanılıyorsa boş bırakılır.
     shopify_access_token: str = ""
+    # client_credentials akışı: mağazaya ait custom app kimlik bilgileri.
+    # Bunlar doluysa token otomatik alınır/yenilenir (token expire sorununu çözer).
+    shopify_client_id: str = ""
+    shopify_client_secret: str = ""
     shopify_api_version: str = "2025-01"
+
+    @property
+    def shopify_use_client_credentials(self) -> bool:
+        """client_id + client_secret tanımlıysa otomatik token akışı kullanılır."""
+        return bool(self.shopify_client_id and self.shopify_client_secret)
 
     # ---- Kamera kimlik bilgileri (RTSP {user}/{pass} doldurma) ----
     camera_username: str = "admin"

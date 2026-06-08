@@ -55,6 +55,7 @@ Worker'lar daemon thread; web sunucusu ana thread'i bloklar ve sinyalleri yönet
 | `app/detection/barcode.py` | pyzbar wrapper, regex filtre, normalize |
 | `app/shopify_worker.py` | pending event'leri Shopify'a yaz (retry/rate-limit) |
 | `app/integrations/shopify_client.py` | Shopify **GraphQL** Admin API |
+| `app/integrations/shopify_auth.py` | client_credentials token al/önbellekle/yenile |
 | `app/storage/database.py` | SQLite (events, dedup, admin sorguları, stats) |
 | `app/storage/snapshots.py` | JPEG kaydet + retention cleanup (cv2 tembel import) |
 | `app/licensing/` | Ed25519 offline lisans doğrulama |
@@ -67,6 +68,11 @@ Worker'lar daemon thread; web sunucusu ana thread'i bloklar ve sinyalleri yönet
 - **İki katmanlı config**: sırlar `.env`'de, yapı `config.yaml`'da. Sır asla YAML'a.
 - **Shopify GraphQL** (REST değil): REST Orders API deprecate ediliyor.
   Public arayüz (`ShopifyClient`, `OrderNotFound`, `ShopifyError`) REST'ten miras.
+- **Shopify auth — iki yöntem**: (A) `client_id`+`client_secret` ile
+  client_credentials token akışı (önerilen; `TokenProvider` token'ı önbelleğe alır,
+  süre dolmadan/401'de otomatik yeniler) veya (B) statik `SHOPIFY_ACCESS_TOKEN`
+  (fallback). İkisi de varsa (A) önceliklidir. `ShopifyClient.from_settings()` seçer.
+  Token, auth header'a **istek başına** dinamik yazılır (token döndüğü için).
 - **Lisans offline**: phone-home yok (internetsiz depo). Asimetrik imza — public
   key koda gömülü ([app/licensing/keys.py](app/licensing/keys.py)), private key
   yalnızca satıcıda (`config/private_key.pem`, gitignore'lu).

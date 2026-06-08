@@ -5,7 +5,9 @@ Kullanım:
     python scripts/test_shopify.py                 # sadece bağlantı testi
     python scripts/test_shopify.py "#1001"         # sipariş bul + test yorumu ekle
 
-.env içinde SHOPIFY_SHOP_URL ve SHOPIFY_ACCESS_TOKEN dolu olmalı.
+.env içinde SHOPIFY_SHOP_URL ve aşağıdakilerden biri dolu olmalı:
+  * SHOPIFY_ACCESS_TOKEN (statik token), veya
+  * SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET (otomatik token, önerilen).
 """
 
 import sys
@@ -23,17 +25,20 @@ from app.settings import get_settings  # noqa: E402
 def main() -> int:
     load_dotenv()
     s = get_settings()
-    if not s.shopify_shop_url or not s.shopify_access_token:
-        print("❌ .env'de SHOPIFY_SHOP_URL ve SHOPIFY_ACCESS_TOKEN gerekli!")
+    if not s.shopify_shop_url:
+        print("❌ .env'de SHOPIFY_SHOP_URL gerekli!")
+        return 1
+    if not (s.shopify_access_token or s.shopify_use_client_credentials):
+        print(
+            "❌ Shopify kimlik bilgisi yok: SHOPIFY_ACCESS_TOKEN ya da "
+            "SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET tanımla!"
+        )
         return 1
 
-    client = ShopifyClient(
-        shop_url=s.shopify_shop_url,
-        access_token=s.shopify_access_token,
-        api_version=s.shopify_api_version,
-    )
+    client = ShopifyClient.from_settings(s)
 
-    print(f"Shopify: {s.shopify_shop_url}  (API {s.shopify_api_version})")
+    auth_mode = "client_credentials" if s.shopify_use_client_credentials else "statik token"
+    print(f"Shopify: {s.shopify_shop_url}  (API {s.shopify_api_version}, auth: {auth_mode})")
     try:
         shop = client.test_connection()
         print(f"✓ Bağlantı OK — mağaza: {shop.get('name')} ({shop.get('myshopifyDomain')})")

@@ -7,10 +7,21 @@ Format [Keep a Changelog](https://keepachangelog.com/) temellidir ve proje
 ## [Unreleased]
 
 ### Eklendi
+- **Shopify client_credentials akışı**: `SHOPIFY_CLIENT_ID` + `SHOPIFY_CLIENT_SECRET`
+  tanımlıysa token `/admin/oauth/access_token`'dan otomatik alınır ve süresi
+  dolmadan/401 alınca otomatik yenilenir. Statik `SHOPIFY_ACCESS_TOKEN` artık
+  isteğe bağlı (fallback). `app/integrations/shopify_auth.py` (`TokenProvider`)
+  ve `ShopifyClient.from_settings()` eklendi.
 - `DEPLOYMENT.md` — deploy süreci, kritik durumlar/riskler, bakım & rollback,
   sürüm öncesi kontrol listesi
 - CLAUDE.md'ye **dokümantasyon disiplini** kuralı: her geliştirme/fix ilgili
   `.md` dosyalarını da güncellemeli
+
+### Değişti
+- `ShopifyClient` artık her isteğin auth header'ını `token_provider`'dan dinamik
+  okur; 401 alındığında (provider varsa) token bir kez tazelenip istek tekrarlanır.
+- `app.py` startup kontrolü: `SHOPIFY_ACCESS_TOKEN` yerine artık token **veya**
+  client_id+secret'tan biri yeterli.
 
 ## [1.0.0] — 2026-06-08
 

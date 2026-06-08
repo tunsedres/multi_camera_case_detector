@@ -50,6 +50,69 @@ def test_auth_error_raises(client, monkeypatch):
         client.find_order_by_name("#1")
 
 
+def test_403_raises_without_refresh(monkeypatch):
+    """403 scope sorunudur; token tazelenmemeli."""
+
+    class FakeProvider:
+        def __init__(self):
+            self.invalidated = 0
+
+        def get_token(self):
+            return "shpat_x"
+
+        def invalidate(self):
+            self.invalidated += 1
+            return "shpat_x"
+
+    provider = FakeProvider()
+    c = ShopifyClient(shop_url="test.myshopify.com", token_provider=provider)
+    monkeypatch.setattr(c.session, "post", lambda *a, **k: FakeResp({}, status_code=403))
+    with pytest.raises(ShopifyError, match="403"):
+        c.find_order_by_name("#1")
+    assert provider.invalidated == 0
+
+
+def test_401_refreshes_token_and_retries(monkeypatch):
+    """token_provider varsa 401 alınca token bir kez tazelenip yeniden denenir."""
+
+    class FakeProvider:
+        def __init__(self):
+            self.invalidated = 0
+
+        def get_token(self):
+            return "shpat_x"
+
+        def invalidate(self):
+            self.invalidated += 1
+            return "shpat_fresh"
+
+    provider = FakeProvider()
+    c = ShopifyClient(shop_url="test.myshopify.com", token_provider=provider)
+
+    responses = [FakeResp({}, status_code=401), _order_resp()]
+    monkeypatch.setattr(c.session, "post", lambda *a, **k: responses.pop(0))
+
+    node = c.find_order_by_name("#1042")
+    assert node["name"] == "#1042"
+    assert provider.invalidated == 1  # tam bir kez tazelendi
+
+
+def test_401_twice_raises(monkeypatch):
+    """İkinci 401'de pes edilir (sonsuz döngü olmaz)."""
+
+    class FakeProvider:
+        def get_token(self):
+            return "shpat_x"
+
+        def invalidate(self):
+            return "shpat_fresh"
+
+    c = ShopifyClient(shop_url="test.myshopify.com", token_provider=FakeProvider())
+    monkeypatch.setattr(c.session, "post", lambda *a, **k: FakeResp({}, status_code=401))
+    with pytest.raises(ShopifyError, match="401"):
+        c.find_order_by_name("#1")
+
+
 def test_throttle_then_success(client, monkeypatch):
     monkeypatch.setattr(sc.time, "sleep", lambda *_a, **_k: None)
     throttled = FakeResp(

@@ -109,6 +109,25 @@ ediliyor).
 1. Shopify admin → **Settings → Apps and sales channels → Develop apps**
 2. **Create an app** → isim ver (örn. "Packing Detector")
 3. **Configure Admin API scopes**: `read_orders`, `write_orders`
+
+İki kimlik doğrulama yöntemi var — **birini** seç:
+
+### (A) Önerilen — client_credentials (otomatik token)
+
+Token, uygulama tarafından `client_id` + `client_secret` ile alınır ve süresi
+dolunca **otomatik yenilenir** (elle token kopyalamak gerekmez, expire sorunu yok).
+
+4. App'in **API credentials** sayfasından **Client ID** ve **Client secret** al.
+5. `.env`:
+   ```
+   SHOPIFY_SHOP_URL=magazaniz.myshopify.com
+   SHOPIFY_CLIENT_ID=xxxxxxxx
+   SHOPIFY_CLIENT_SECRET=shpss_xxxxxxxx
+   SHOPIFY_API_VERSION=2025-01
+   ```
+
+### (B) Alternatif — statik access token
+
 4. **Install app** → **Admin API access token**'ı kopyala (yalnızca bir kez gösterilir!)
 5. `.env`:
    ```
@@ -116,6 +135,9 @@ ediliyor).
    SHOPIFY_ACCESS_TOKEN=shpat_xxxxxxxx
    SHOPIFY_API_VERSION=2025-01
    ```
+   ⚠️ Bu token süresi dolabilir; dolunca elle yenilemen gerekir. Mümkünse (A)'yı kullan.
+
+> İkisi de tanımlıysa `client_id`+`client_secret` (A) önceliklidir.
 
 Bağlantıyı doğrula: `python scripts/test_shopify.py` (token testi) ·
 `python scripts/test_shopify.py "#1001"` (gerçek siparişe test yorumu).
