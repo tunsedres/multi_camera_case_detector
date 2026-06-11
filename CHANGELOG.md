@@ -41,7 +41,24 @@ Format [Keep a Changelog](https://keepachangelog.com/) temellidir ve proje
 - CLAUDE.md'ye **dokümantasyon disiplini** kuralı: her geliştirme/fix ilgili
   `.md` dosyalarını da güncellemeli
 
+### Düzeltildi
+- **Telefon no'su yanlış sipariş olarak okunuyordu**: `order_no_regex` `'#'`i opsiyonel
+  yapıyordu (`^#?\d{6,10}$`), bu yüzden etiket arkasındaki fişte boşlukları atılmış
+  telefon ("0850 222 22 00" → "0850222200", 10 hane) geçerli sipariş sanılıyordu.
+  Artık `'#'` zorunlu (`^#\d{6,10}$`) — gerçek sipariş no'su her zaman `#` ile başlar.
+- **Çoklu kamerada RAM patlaması** (`PaddleEnginePool`): her `CameraWorker` kendi
+  PaddleOCR modelini kuruyordu → 8 kamera = 8 model kopyası → 16 GB RAM dolup swap'e
+  düşüyor, sistem thrash ediyordu. Artık `app.py` **paylaşılan** bir motor havuzu
+  kurar (`detection.paddle_pool_size`, varsayılan 2) ve tüm worker'lara enjekte eder.
+  RAM = `size`× model (8× değil); PaddleOCR thread-safe olmadığı için her motor tek
+  thread'e ödünç verilir.
+
 ### Değişti
+- **Paketleme bilgisi artık order.note yerine yalnızca metafield'e yazılıyor**
+  (`shopify.write_to_order_note: false` varsayılan). Müşteri talebi: bilgi
+  paylaşılan Notes kutusunu kirletmesin, Timeline'da görünsün. Ancak Shopify Admin
+  API'si Timeline'a comment yazamaz (yalnızca note/tags/metafield) → en yakın temiz
+  çözüm yapısal metafield. `order.note`'u geri açmak için flag'i `true` yap.
 - **Kameralar YAML'dan SQLite'a taşındı**: `config.yaml`'daki `cameras` bölümü
   artık **yoksayılır** (yapısal config — detection/shopify/storage — YAML'da kalır).
   `app.py` worker'ları DB'den kurar (`_load_cameras`). Mevcut kullanıcılar

@@ -12,7 +12,7 @@ Bu dosya **kuruluma çıkmadan önce ne yapmalıyız**, **deploy adımları** ve
 
 ### Bu oturumda tamamlanan (✅ hazır)
 - Çekirdek tespit + dedup + snapshot + SQLite kuyruğu
-- Shopify **GraphQL** entegrasyonu (note + metafield)
+- Shopify **GraphQL** entegrasyonu (metafield; order note opsiyonel/varsayılan kapalı)
 - Ed25519 **offline lisanslama** + vendor üretici script
 - **Admin Web Panel** (dashboard, arama, snapshot, retry, `/health`)
 - Health/monitoring + scheduler (retention temizliği)
@@ -22,7 +22,7 @@ Bu dosya **kuruluma çıkmadan önce ne yapmalıyız**, **deploy adımları** ve
 1. **Gerçek lisans anahtar çifti üret** — `keys.py`'deki dev anahtarını değiştir:
    `python scripts/generate_license.py keygen` → `private_key.pem`'i güvenli yedekle.
 2. **Shopify GraphQL'i gerçek dev store'da doğrula** — `scripts/test_shopify.py "#1001"`
-   ile note + metafield gerçekten yazılıyor mu? (Kod yazıldı, canlı doğrulama şart.)
+   ile metafield (ve `write_to_order_note: true` ise note) gerçekten yazılıyor mu?
 3. **Saha testi (3 gün)** — gerçek paketleme akışında false-positive ayarı,
    `dedup_window_seconds` / `order_no_regex` kalibrasyonu.
 4. **Etiket süreci** — paketleme etiketleri Code128 barkod taşımalı; paketleyicilere
@@ -118,6 +118,21 @@ Bir kamera frame üretmeyi durdurursa tespit sessizce durur. Panel dashboard kam
 ### 3.9 🎫 Lisans süresi
 Panel dashboard "lisans kalan gün"ü gösterir. `LICENSE_ENFORCE=true` iken süre dolarsa
 sistem başlamaz/çalışmaya devam edemez. **Süre dolmadan önce yeni anahtar üret/ilet.**
+
+### 3.10 🧠 Çoklu kamera — RAM/CPU ölçeklenmesi
+İki ayrı kaynak baskısı kamera sayısıyla artar:
+- **RAM** — PaddleOCR modeli paylaşılan havuzdan gelir (`detection.paddle_pool_size`,
+  varsayılan 2). RAM ≈ `pool_size`× model + kamera başına frame tamponu. Kamera başına
+  ayrı model **kurulmaz** (eski davranış 8 kamerada 16 GB'ı doldurup swap thrash
+  yapıyordu).
+- **CPU** — asıl darboğaz **kamera başına video çözme**. **Ana akış** (`.../<ch>01`,
+  tam çözünürlük) çok ağırdır; 8 kamerada substream (`.../<ch>02`) tercih edilmeli.
+  Substream OCR'ı zorlarsa o istasyonu ana akışta bırak (panelde kamera bazında karış).
+
+**İzle**: `docker stats packing-detector` (CPU%/MEM) + host `uptime` (yük < çekirdek
+sayısı olmalı) + `free -h` (swap dolmamalı) + `/health` (kamera `stale`/`reconnect`).
+Yük çekirdeği aşıyor ya da swap doluyorsa: substream'e geç, `paddle_pool_size`/kamera
+sayısını azalt. **Yeni kurulumda kademeli aç** (2 → 4 → 8, her adımda ölç).
 
 ---
 

@@ -2,7 +2,8 @@
 
 Hikvision IP kameralardan RTSP stream alıp paketleme etiketindeki **sipariş
 numarasını OCR ile okur** (örn. `#939146`) ve ilgili **Shopify siparişine** "şu
-kamerada, şu zamanda paketlendi" bilgisini otomatik yazar (order note + metafield).
+kamerada, şu zamanda paketlendi" bilgisini otomatik yazar (yapısal **metafield**;
+`order.note` opsiyonel, varsayılan kapalı — Shopify API Timeline'a comment yazamaz).
 Tespit anının fotoğrafı kanıt olarak saklanır.
 
 > Tespit yöntemi yapılandırılabilir: `ocr` (etiketteki numarayı oku — varsayılan),
@@ -46,7 +47,7 @@ Hikvision Kameralar ──RTSP──► NVR (ana kayıt, dokunulmaz)
                                                   │
                                                   ▼
                                       Shopify GraphQL Admin API
-                                      (order note + metafield)
+                                      (metafield; order note opsiyonel)
 ```
 
 Detaylı mimari ve kararlar: [CLAUDE.md](CLAUDE.md) ·

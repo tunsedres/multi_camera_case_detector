@@ -161,6 +161,28 @@ class Application:
                 sys.exit(1)
 
         det = self.config.detection
+        # PaddleOCR motoru kamera başına DEĞİL, PAYLAŞILAN bir havuzdan gelir
+        # (size kadar model). Aksi halde her kamera kendi modelini kurar ve 8 kamera
+        # 16 GB RAM'i doldurup swap'e düşürür (üretimde yaşandı).
+        shared_paddle = None
+        if det.mode == "paddle":
+            from app.detection.paddle_ocr import PaddleEnginePool, PaddleOCRDetector
+
+            pool = PaddleEnginePool(
+                size=det.paddle_pool_size,
+                model_root=det.paddle_model_root,
+            )
+            shared_paddle = PaddleOCRDetector(
+                order_regex=det.order_no_regex,
+                add_hash_prefix=det.add_hash_prefix,
+                min_confidence=det.paddle_min_confidence,
+                engine_pool=pool,
+            )
+            self.logger.info(
+                "Paylaşılan PaddleOCR havuzu: %s motor (%s kamera için)",
+                det.paddle_pool_size,
+                len(active),
+            )
         for cam in active:
             self.health.register_camera(cam.id, cam.name)
             worker = CameraWorker(
@@ -178,6 +200,7 @@ class Application:
                 yolo_conf=det.yolo_conf,
                 paddle_model_root=det.paddle_model_root,
                 paddle_min_confidence=det.paddle_min_confidence,
+                shared_paddle=shared_paddle,
                 min_votes=det.min_votes,
                 vote_window_seconds=det.vote_window_seconds,
                 dedup_window_seconds=det.dedup_window_seconds,

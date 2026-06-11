@@ -23,7 +23,8 @@ Bir değişiklik "tamam" sayılmaz; ilgili doküman güncellenmeden ve `ruff che
 
 Hikvision IP kameralardan RTSP substream alır, paketleme etiketindeki **Code128
 barkodu** okur, sipariş no'yu çözer ve **Shopify siparişine** "şu kamerada, şu
-zamanda paketlendi" bilgisini (order note + metafield) otomatik yazar. Amaç:
+zamanda paketlendi" bilgisini (yapısal metafield; order note opsiyonel/varsayılan
+kapalı — Shopify API Timeline'a comment yazamaz) otomatik yazar. Amaç:
 müşteri şikâyetinde saatlerce kamera kaydı taramak yerine saniyeler içinde ilgili
 ana gitmek. Tespit anının snapshot'ı kanıt olarak saklanır.
 
@@ -37,7 +38,7 @@ kuyruğa alınır.
 RTSP (substream) → CameraWorker (kamera başına 1 thread)
                        → BarcodeDetector (pyzbar, regex filtre)
                        → on_detection: dedup → snapshot → SQLite (pending)
-SQLite (pending) → ShopifyWorker (tek thread) → Shopify GraphQL (note+metafield)
+SQLite (pending) → ShopifyWorker (tek thread) → Shopify GraphQL (metafield; note opsiyonel)
 MaintenanceWorker → snapshot retention temizliği + lisans recheck
 Admin Web Panel (FastAPI/uvicorn, ana thread) → dashboard, arama, snapshot, kamera CRUD, /health
 ```
@@ -74,6 +75,13 @@ Worker'lar daemon thread; web sunucusu ana thread'i bloklar ve sinyalleri yönet
   kurulur: kamera değişikliği **yeniden başlatmada** etkin olur (hot-reload yok),
   panel banner uyarır (`AppContext.mark_restart_needed`). `config.yaml`'daki olası
   `cameras` bölümü `load_config` tarafından yoksayılır.
+- **Paylaşılan PaddleOCR motor havuzu** (`PaddleEnginePool`, `detection.paddle_pool_size`):
+  PaddleOCR modeli ağır (~GB). Kamera başına bir model kurulursa N kamera = N model
+  → RAM dolar, swap thrash (8 kamerada üretimde yaşandı). Bu yüzden `app.py` **tek**
+  havuz kurar (`size` motor), tüm `CameraWorker`'lara aynı paylaşılan
+  `PaddleOCRDetector`'ı enjekte eder. PaddleOCR thread-safe değil → her motor kuyruktan
+  tek thread'e ödünç verilir; eşzamanlılık `size` ile sınırlı. RAM = `size`× model.
+  Çok kamerada CPU ana darboğaz: ana akış yerine substream (`.../<ch>02`) düşünülmeli.
 - **Shopify GraphQL** (REST değil): REST Orders API deprecate ediliyor.
   Public arayüz (`ShopifyClient`, `OrderNotFound`, `ShopifyError`) REST'ten miras.
 - **Shopify auth — iki yöntem**: (A) `client_id`+`client_secret` ile

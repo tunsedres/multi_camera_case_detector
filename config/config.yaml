@@ -21,6 +21,10 @@ detection:
   mode: paddle
   paddle_model_root: models/paddleocr/whl
   paddle_min_confidence: 0.80      # PaddleOCR güven eşiği (0-1)
+  # PAYLAŞILAN PaddleOCR motor havuzu boyutu (kamera başına değil, toplam). Tüm
+  # kameralar paylaşır → RAM = size× model. Çok kamera (8) için 2-3 yeterli; tek
+  # kamerada 1 bırakılabilir. Arttırınca RAM ve CPU artar.
+  paddle_pool_size: 2
   yolo_model_path: models/barcode_yolov8s.pt
   yolo_conf: 0.35
   target_fps: 1                    # PaddleOCR CPU'da ~1 kare/sn; etiket saniyeler kalıyor, yeterli
@@ -28,9 +32,12 @@ detection:
   # 'window' = aynı sipariş+kamera dedup_window_seconds içinde 1 kez.
   dedup_mode: daily
   dedup_window_seconds: 30         # ('window' modunda) aynı sipariş+kamera tekrar yoksayma
-  # Order name formatı: '#' + 6-10 hane. Yarım/yanlış OCR okumalarını eler.
-  order_no_regex: '^#?\d{6,10}$'
-  add_hash_prefix: true            # '939146' -> '#939146' (Shopify order name araması)
+  # Order name formatı: '#' + 6-10 hane. '#' ZORUNLU (opsiyonel değil): etiketin
+  # arkasındaki paketleme fişinde telefon vb. '#'siz sayılar var (örn.
+  # "0850 222 22 00" → boşluklar atılınca "0850222200" = 10 hane) → '#?' ile bunlar
+  # yanlış siparişe yazılıyordu. Gerçek sipariş no'su HER ZAMAN '#' ile başlar.
+  order_no_regex: '^#\d{6,10}$'
+  add_hash_prefix: true            # regex '#' zorunlu kıldığı için pratikte etkisiz
   ocr_min_confidence: 60           # OCR güven eşiği (0-100); düşük=çok okuma+çok yanlış
   # Çoklu-kare oylama: değer vote_window_seconds içinde min_votes kez okununca onaylanır.
   min_votes: 3                     # 1 = oylama kapalı (her okuma anında tetikler)
@@ -40,8 +47,12 @@ detection:
 
 # ---- Shopify ----
 shopify:
-  write_to_order_note: true        # order.note alanına append
-  write_to_metafield: true         # Yapısal kayıt için metafield
+  # NOT: Shopify Admin API'si sipariş Timeline'ına YORUM (comment) yazamaz — yalnızca
+  # note, tags ve metafield yazılabilir (CommentEvent salt-okunur). Paketleme bilgisini
+  # paylaşılan order.note kutusunu kirletmeden tutmak için sadece yapısal metafield'e
+  # yazıyoruz. order.note'u tekrar açmak istersen write_to_order_note: true yap.
+  write_to_order_note: false       # order.note'a YAZMA (paylaşılan alan; kirletme)
+  write_to_metafield: true         # Kamera + zaman damgası burada (yapısal kayıt)
   metafield_namespace: "packing"
   note_template: "📦 [{timestamp}] Paketleme: {camera_name} (Kamera #{camera_id})"
   poll_interval_seconds: 2.0       # ShopifyWorker pending tarama aralığı

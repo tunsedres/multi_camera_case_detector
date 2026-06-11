@@ -35,6 +35,10 @@ class DetectionConfig(BaseModel):
     # PaddleOCR (mode='paddle'). Tesseract'tan çok daha doğru; offline modeller.
     paddle_model_root: str = "models/paddleocr/whl"
     paddle_min_confidence: float = Field(default=0.80, ge=0, le=1)
+    # Paylaşılan PaddleOCR motor havuzu boyutu (kamera başına DEĞİL, toplam). Tüm
+    # kameralar bu havuzu paylaşır → RAM = size× model (8× değil). size kadar OCR
+    # aynı anda çalışır. Çok kamerada 2-3 önerilir; arttıkça RAM+CPU artar.
+    paddle_pool_size: int = Field(default=2, ge=1, le=8)
     target_fps: int = Field(default=3, ge=1, le=25)
     # Tekrar engelleme (dedup):
     #   'daily'  → aynı sipariş no günde 1 kez yazılır (kameradan bağımsız)
@@ -82,7 +86,9 @@ class DetectionConfig(BaseModel):
 
 
 class ShopifyConfig(BaseModel):
-    write_to_order_note: bool = True
+    # Shopify API Timeline'a comment yazamaz; paylaşılan order.note kutusunu
+    # kirletmemek için varsayılan KAPALI. Yapısal kayıt metafield'de tutulur.
+    write_to_order_note: bool = False
     write_to_metafield: bool = True
     metafield_namespace: str = "packing"
     note_template: str = "📦 [{timestamp}] Paketleme: {camera_name} (Kamera #{camera_id})"

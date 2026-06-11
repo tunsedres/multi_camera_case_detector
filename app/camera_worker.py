@@ -54,6 +54,7 @@ class CameraWorker(threading.Thread):
         yolo_conf: float = 0.35,
         paddle_model_root: str = "models/paddleocr/whl",
         paddle_min_confidence: float = 0.80,
+        shared_paddle=None,
         min_votes: int = 3,
         vote_window_seconds: float = 4.0,
         dedup_window_seconds: float = 30.0,
@@ -84,14 +85,20 @@ class CameraWorker(threading.Thread):
 
             self._ocr = OCRDetector(order_regex, add_hash_prefix, min_confidence=ocr_min_confidence)
         if mode == "paddle":
-            from app.detection.paddle_ocr import PaddleOCRDetector
+            # Paylaşılan dedektör verildiyse onu kullan (tek model, tüm kameralar) →
+            # kamera başına ayrı PaddleOCR kurup RAM'i 8× şişirmeyi önler. Verilmezse
+            # (tek-kamera/test) kendi dedektörünü kurar.
+            if shared_paddle is not None:
+                self._paddle = shared_paddle
+            else:
+                from app.detection.paddle_ocr import PaddleOCRDetector
 
-            self._paddle = PaddleOCRDetector(
-                order_regex=order_regex,
-                add_hash_prefix=add_hash_prefix,
-                min_confidence=paddle_min_confidence,
-                model_root=paddle_model_root,
-            )
+                self._paddle = PaddleOCRDetector(
+                    order_regex=order_regex,
+                    add_hash_prefix=add_hash_prefix,
+                    min_confidence=paddle_min_confidence,
+                    model_root=paddle_model_root,
+                )
         if mode == "yolo":
             from app.detection.yolo_barcode import YoloBarcodeDetector
 
