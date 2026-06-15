@@ -82,6 +82,14 @@ Worker'lar daemon thread; web sunucusu ana thread'i bloklar ve sinyalleri yönet
   `PaddleOCRDetector`'ı enjekte eder. PaddleOCR thread-safe değil → her motor kuyruktan
   tek thread'e ödünç verilir; eşzamanlılık `size` ile sınırlı. RAM = `size`× model.
   Çok kamerada CPU ana darboğaz: ana akış yerine substream (`.../<ch>02`) düşünülmeli.
+- **PaddleOCR MKLDNN kapalı** (`enable_mkldnn=False`, ZORUNLU): MKLDNN açıkken (paddle
+  varsayılanı) CPU backend her FARKLI girdi şekli için kernel/primitive önbelleğe alıp
+  asla atmaz. Canlı RTSP karelerinin det boyutu kare-kare değiştiği için bu önbellek
+  sınırsız büyür → native bellek ~200 MB/dk sızar (üretimde 7→10 GB / 15 dk; Python
+  gc'ye görünmez çünkü C++ allocator'da). `_make_engine` `enable_mkldnn=False` verir →
+  sızıntı kaynağında durur. Emniyet kemeri: `PaddleEnginePool.recycle()` boş motorları
+  atıp taze kurar, `MaintenanceWorker` periyodik çağırır (`maintenance.paddle_recycle_hours`,
+  varsayılan 6 sa; 0=kapalı) → uzun çalışmada artık native büyümeyi sıfırlar.
 - **Shopify GraphQL** (REST değil): REST Orders API deprecate ediliyor.
   Public arayüz (`ShopifyClient`, `OrderNotFound`, `ShopifyError`) REST'ten miras.
 - **Shopify auth — iki yöntem**: (A) `client_id`+`client_secret` ile

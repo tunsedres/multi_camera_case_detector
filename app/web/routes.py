@@ -65,18 +65,25 @@ def dashboard(request: Request):
 def events(
     request: Request,
     order_no: str | None = Query(default=None),
-    camera_id: int | None = Query(default=None),
+    camera_id: str | None = Query(default=None),
     status: str | None = Query(default=None),
     date_from: str | None = Query(default=None),
     date_to: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
 ):
     ctx = _ctx(request)
-    status = status or None
+    # Form boş alanları boş string olarak gönderir ("camera_id=").
+    # camera_id'yi string alıp burada int'e çeviriyoruz; boş/geçersiz → None.
+    camera_id_int: int | None = None
+    if camera_id and camera_id.strip():
+        try:
+            camera_id_int = int(camera_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Geçersiz kamera no")
     filters = {
         "order_no": order_no or None,
-        "camera_id": camera_id,
-        "status": status,
+        "camera_id": camera_id_int,
+        "status": status or None,
         "date_from": date_from or None,
         "date_to": date_to or None,
     }

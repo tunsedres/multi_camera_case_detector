@@ -72,6 +72,12 @@ class PaddleEnginePool:
             use_angle_cls=False,
             lang=self.lang,
             show_log=False,
+            # enable_mkldnn=False ZORUNLU: MKLDNN açıkken paddle CPU backend her FARKLI
+            # girdi şekli için bir kernel/primitive önbelleğe alır ve ASLA atmaz. Canlı
+            # RTSP karelerinin det boyutu kare-kare değiştiği için bu önbellek sınırsız
+            # büyür → native bellek sızar (üretimde 7→10 GB / 15 dk, ~200 MB/dk; Python
+            # gc'ye görünmez çünkü C++ allocator'da). Kapatınca sızıntı kaynağında durur.
+            enable_mkldnn=False,
             det_model_dir=f"{self.model_root}/det/{self.lang}/en_PP-OCRv3_det_infer",
             rec_model_dir=f"{self.model_root}/rec/{self.lang}/en_PP-OCRv4_rec_infer",
             cls_model_dir=f"{self.model_root}/cls/ch_ppocr_mobile_v2.0_cls_infer",
@@ -100,6 +106,32 @@ class PaddleEnginePool:
         """Havuzdan bir motor ödünç alıp .ocr() çalıştırır, ham çıktıyı döner."""
         with self.borrow() as engine:
             return engine.ocr(frame, cls=False)
+
+    def recycle(self) -> int:
+        """
+        Boştaki motorları atıp (native bellek serbest kalsın) bir sonraki ödünçte
+        TAZE kurulmalarını sağlar. enable_mkldnn=False sızıntıyı kaynağında durdurur;
+        bu, emniyet kemeri: herhangi bir artık native büyüme uzun çalışmada birikemesin
+        diye periyodik (MaintenanceWorker) çağrılır.
+
+        Yalnızca BOŞTAKİ motorlar atılır — ödünç verilmiş (o an OCR yapan) motora
+        dokunulmaz; o motor geri konunca normal ödünç döngüsüne katılır ve sıradaki
+        recycle'da ele alınır. Atılan her motor için _created azaltılır ki _acquire
+        onları tembel olarak yeniden kursun. Döndürdüğü: atılan motor sayısı.
+        """
+        recycled = 0
+        while True:
+            try:
+                engine = self._idle.get_nowait()
+            except queue.Empty:
+                break
+            with self._lock:
+                self._created -= 1
+            del engine  # referans bırak → GC native belleği serbest bırakır
+            recycled += 1
+        if recycled:
+            logger.info("PaddleOCR havuzu: %s boşta motor geri dönüştürüldü", recycled)
+        return recycled
 
 
 class PaddleOCRDetector:
@@ -133,6 +165,13 @@ class PaddleOCRDetector:
         if self._pool is not None:
             return self._pool.run_ocr(frame)
         return self._engine().ocr(frame, cls=False)
+
+    def recycle(self) -> int:
+        """Paylaşılan havuzdaki boş motorları geri dönüştür (bkz. PaddleEnginePool).
+        Havuz yoksa (tek-motor yolu) bir şey yapmaz."""
+        if self._pool is not None:
+            return self._pool.recycle()
+        return 0
 
     def detect(self, frame: np.ndarray) -> list[BarcodeResult]:
         """Frame'de sipariş-no formatına uyan metinleri döner (en güvenli ilk)."""

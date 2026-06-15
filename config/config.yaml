@@ -70,6 +70,10 @@ storage:
 maintenance:
   cleanup_interval_hours: 6        # Retention temizliği kaç saatte bir çalışsın
   license_recheck_hours: 12        # Lisans süre/geçerlilik yeniden kontrol aralığı
+  # PaddleOCR motorlarını kaç saatte bir geri dönüştür (boş motorları atıp taze kur).
+  # enable_mkldnn=False sızıntıyı zaten kaynağında durdurur; bu emniyet kemeri, uzun
+  # çalışmada birikebilecek artık native belleği sıfırlar. 0 = kapalı.
+  paddle_recycle_hours: 6
 
 # ---- İzleme / sağlık ----
 monitoring:

@@ -107,6 +107,10 @@ class StorageConfig(BaseModel):
 class MaintenanceConfig(BaseModel):
     cleanup_interval_hours: float = Field(default=6.0, gt=0)
     license_recheck_hours: float = Field(default=12.0, gt=0)
+    # PaddleOCR motorlarını periyodik geri dönüştürme (boş motorları atıp taze kur).
+    # enable_mkldnn=False sızıntıyı kaynağında durdurur; bu emniyet kemeri, herhangi
+    # bir artık native büyümeyi uzun çalışmada sıfırlar. 0 = kapalı.
+    paddle_recycle_hours: float = Field(default=6.0, ge=0)
 
 
 class MonitoringConfig(BaseModel):

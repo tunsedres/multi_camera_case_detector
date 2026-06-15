@@ -27,6 +27,8 @@ class MaintenanceWorker(threading.Thread):
         cleanup_interval_hours: float = 6.0,
         license_recheck_hours: float = 12.0,
         license_check: Callable[[], None] | None = None,
+        paddle_recycle_hours: float = 6.0,
+        paddle_recycle: Callable[[], int] | None = None,
         stop_event: threading.Event | None = None,
     ):
         super().__init__(name="MaintenanceWorker", daemon=True)
@@ -35,6 +37,9 @@ class MaintenanceWorker(threading.Thread):
         self.cleanup_interval = cleanup_interval_hours * 3600
         self.license_interval = license_recheck_hours * 3600
         self.license_check = license_check
+        # PaddleOCR motor geri dönüşümü (native bellek emniyet kemeri). 0 = kapalı.
+        self.paddle_recycle_interval = paddle_recycle_hours * 3600
+        self.paddle_recycle = paddle_recycle
         self.stop_event = stop_event or threading.Event()
         self._tick = 60.0  # uyanma çözünürlüğü
 
@@ -42,6 +47,7 @@ class MaintenanceWorker(threading.Thread):
         logger.info("MaintenanceWorker başladı (retention=%s gün)", self.retention_days)
         last_cleanup = 0.0
         last_license = 0.0
+        last_recycle = time.monotonic()  # boot'taki taze motoru hemen geri dönüştürme
 
         # Başlangıçta bir kez çalıştır
         self._run_cleanup()
@@ -56,6 +62,13 @@ class MaintenanceWorker(threading.Thread):
             if self.license_check and now - last_license >= self.license_interval:
                 self._run_license_check()
                 last_license = now
+            if (
+                self.paddle_recycle
+                and self.paddle_recycle_interval > 0
+                and now - last_recycle >= self.paddle_recycle_interval
+            ):
+                self._run_paddle_recycle()
+                last_recycle = now
             self.stop_event.wait(timeout=self._tick)
 
         logger.info("MaintenanceWorker durdu")
@@ -75,3 +88,9 @@ class MaintenanceWorker(threading.Thread):
             self.license_check()
         except Exception as e:  # noqa: BLE001
             logger.exception("Lisans yeniden kontrol hatası: %s", e)
+
+    def _run_paddle_recycle(self):
+        try:
+            self.paddle_recycle()
+        except Exception as e:  # noqa: BLE001
+            logger.exception("PaddleOCR geri dönüşüm hatası: %s", e)

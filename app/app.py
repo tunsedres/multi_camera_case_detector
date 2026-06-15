@@ -239,6 +239,10 @@ class Application:
                 cleanup_interval_hours=m.cleanup_interval_hours,
                 license_recheck_hours=m.license_recheck_hours,
                 license_check=self._evaluate_license,
+                # PaddleOCR native bellek emniyet kemeri: boş motorları periyodik
+                # geri dönüştür. paddle modu dışında shared_paddle None → atlanır.
+                paddle_recycle_hours=m.paddle_recycle_hours,
+                paddle_recycle=(shared_paddle.recycle if shared_paddle is not None else None),
                 stop_event=self.stop_event,
             )
         )

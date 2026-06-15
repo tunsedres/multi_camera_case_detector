@@ -42,6 +42,20 @@ Format [Keep a Changelog](https://keepachangelog.com/) temellidir ve proje
   `.md` dosyalarını da güncellemeli
 
 ### Düzeltildi
+- **PaddleOCR native bellek sızıntısı** (`enable_mkldnn=False`): MKLDNN açıkken (paddle
+  varsayılanı) CPU backend her FARKLI girdi şekli için bir kernel/primitive önbelleğe
+  alıp asla atmıyordu. Canlı RTSP karelerinin det boyutu kare-kare değiştiği için bu
+  önbellek sınırsız büyüyordu → native bellek ~200 MB/dk sızıyor (üretimde 7→10 GB /
+  15 dk), Python gc'ye görünmüyordu (C++ allocator'da). `PaddleEnginePool._make_engine`
+  artık `enable_mkldnn=False` veriyor → sızıntı kaynağında durur. Ek emniyet kemeri:
+  `PaddleEnginePool.recycle()` + `MaintenanceWorker` periyodik boş-motor geri dönüşümü
+  (`maintenance.paddle_recycle_hours`, varsayılan 6 saat; 0 = kapalı) — uzun çalışmada
+  artık native büyümeyi sıfırlar. (`app/detection/paddle_ocr.py`, `app/scheduler.py`,
+  `app/app.py`, `app/config.py`)
+- **Olaylar sayfasında boş kamera filtresi 422 hatası veriyordu**: form boş alanları
+  boş string olarak gönderiyor (`camera_id=`), `int | None` query param bunu parse
+  edemeyip `int_parsing` hatası dönüyordu. `camera_id` artık string alınıp endpoint
+  içinde int'e çevriliyor; boş → `None`, geçersiz → 400. (`app/web/routes.py`)
 - **Telefon no'su yanlış sipariş olarak okunuyordu**: `order_no_regex` `'#'`i opsiyonel
   yapıyordu (`^#?\d{6,10}$`), bu yüzden etiket arkasındaki fişte boşlukları atılmış
   telefon ("0850 222 22 00" → "0850222200", 10 hane) geçerli sipariş sanılıyordu.
