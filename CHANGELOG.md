@@ -42,6 +42,23 @@ Format [Keep a Changelog](https://keepachangelog.com/) temellidir ve proje
   `.md` dosyalarını da güncellemeli
 
 ### Düzeltildi
+- **PaddleOCR native bellek sızıntısı — KESİN çözüm: periyodik süreç yeniden başlatma**
+  (`maintenance.max_uptime_minutes`, varsayılan 45 dk): paddlepaddle 2.6.2 her inference'ta
+  native bellek sızdırıyor — üretimde **ÖLÇÜLDÜ: ~130 MB/dk, lineer**, thread sayısı sabit
+  (135) → thread değil, per-inference native sızıntı. `enable_mkldnn=False` ve idle-recycle
+  bunu DURDURMADI (sızıntı motorlar meşgulken oluyor; paddle belleği yalnızca SÜREÇ ÇIKINCA
+  bırakıyor). `MaintenanceWorker` artık uptime sınırını geçince `os.kill(SIGTERM)` ile süreci
+  nazikçe sonlandırır (panel restart'ı ile aynı mekanizma, `app/web/context.py`); Docker
+  `restart: unless-stopped` taze RSS ile geri getirir (~2-3 sn kesinti). Runway boot→OOM
+  ~68 dk olduğu için 45 dk güvenli. 0 = kapalı. (`app/scheduler.py`, `app/config.py`,
+  `app/app.py`, `config/config.yaml`)
+- **Bellek emniyet kemeri + thread oversubscription**: `docker-compose.yml` `mem_limit: 10g`
+  — periyodik restart yanlış ayarlanırsa bile HOST (15.6 GB) swap thrash'e DÜŞMESİN, konteyner
+  OOM-kill + `restart: unless-stopped` ile dönsün. Ayrıca Dockerfile `OMP/OPENBLAS/MKL_NUM_THREADS=1`
+  + `FLAGS_use_mkldnn=0`: paddle CPU backend ayarsızken çekirdek sayısı kadar OpenMP thread
+  açıp load avg'i ~12'ye çıkarıyordu (oversubscription); thread'leri sabitler. NOT: bu BELLEK
+  sızıntısını çözmez (ölçümle doğrulandı) — yalnızca CPU/load baskısını azaltır.
+  (`Dockerfile`, `docker-compose.yml`)
 - **PaddleOCR native bellek sızıntısı** (`enable_mkldnn=False`): MKLDNN açıkken (paddle
   varsayılanı) CPU backend her FARKLI girdi şekli için bir kernel/primitive önbelleğe
   alıp asla atmıyordu. Canlı RTSP karelerinin det boyutu kare-kare değiştiği için bu

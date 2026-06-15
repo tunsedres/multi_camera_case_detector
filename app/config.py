@@ -111,6 +111,14 @@ class MaintenanceConfig(BaseModel):
     # enable_mkldnn=False sızıntıyı kaynağında durdurur; bu emniyet kemeri, herhangi
     # bir artık native büyümeyi uzun çalışmada sıfırlar. 0 = kapalı.
     paddle_recycle_hours: float = Field(default=6.0, ge=0)
+    # Periyodik TAM süreç yeniden başlatma (native bellek sızıntısı için kesin çözüm).
+    # paddlepaddle 2.6.2 her inference'ta native bellek sızdırıyor (~130 MB/dk üretimde
+    # ÖLÇÜLDÜ; enable_mkldnn=False ve idle-recycle DURDURMADI çünkü sızıntı per-inference
+    # ve motorlar meşgul). Paddle bu belleği yalnızca SÜREÇ ÇIKINCA bırakır. Bu yüzden
+    # uptime bu süreyi geçince süreç nazikçe (SIGTERM) çıkar, Docker restart:unless-stopped
+    # taze RSS ile geri getirir (~2-3 sn kesinti). 0 = kapalı. Runway ölçümle: boot'tan
+    # OOM'a ~68 dk olduğu için 45 dk güvenli marj bırakır.
+    max_uptime_minutes: float = Field(default=45.0, ge=0)
 
 
 class MonitoringConfig(BaseModel):

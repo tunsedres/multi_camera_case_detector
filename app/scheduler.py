@@ -5,11 +5,15 @@ Bakım worker'ı — periyodik arka plan görevleri.
   Önceki POC'ta cleanup_old() tanımlıydı ama HİÇ çağrılmıyordu — disk sonsuz
   büyüyordu. Bu worker o açığı kapatır.
 * Lisans yeniden kontrolü (süre dolumu runtime'da yakalansın diye).
+* Periyodik süreç yeniden başlatma (paddlepaddle native bellek sızıntısı kesin
+  çözümü — bellek yalnızca süreç çıkınca bırakıldığı için uptime sınırında SIGTERM).
 """
 
 from __future__ import annotations
 
 import logging
+import os
+import signal
 import threading
 import time
 from collections.abc import Callable
@@ -29,6 +33,7 @@ class MaintenanceWorker(threading.Thread):
         license_check: Callable[[], None] | None = None,
         paddle_recycle_hours: float = 6.0,
         paddle_recycle: Callable[[], int] | None = None,
+        max_uptime_minutes: float = 0.0,
         stop_event: threading.Event | None = None,
     ):
         super().__init__(name="MaintenanceWorker", daemon=True)
@@ -40,14 +45,23 @@ class MaintenanceWorker(threading.Thread):
         # PaddleOCR motor geri dönüşümü (native bellek emniyet kemeri). 0 = kapalı.
         self.paddle_recycle_interval = paddle_recycle_hours * 3600
         self.paddle_recycle = paddle_recycle
+        # Periyodik tam süreç yeniden başlatma (paddle native sızıntısı kesin çözümü).
+        # 0 = kapalı. Saniyeye çevir.
+        self.max_uptime_seconds = max_uptime_minutes * 60
         self.stop_event = stop_event or threading.Event()
         self._tick = 60.0  # uyanma çözünürlüğü
 
     def run(self):
         logger.info("MaintenanceWorker başladı (retention=%s gün)", self.retention_days)
+        boot = time.monotonic()
         last_cleanup = 0.0
         last_license = 0.0
-        last_recycle = time.monotonic()  # boot'taki taze motoru hemen geri dönüştürme
+        last_recycle = boot  # boot'taki taze motoru hemen geri dönüştürme
+        if self.max_uptime_seconds > 0:
+            logger.info(
+                "Periyodik süreç yeniden başlatma açık: uptime %s dk geçince SIGTERM",
+                self.max_uptime_seconds / 60,
+            )
 
         # Başlangıçta bir kez çalıştır
         self._run_cleanup()
@@ -69,9 +83,29 @@ class MaintenanceWorker(threading.Thread):
             ):
                 self._run_paddle_recycle()
                 last_recycle = now
+            # Uptime sınırı: native bellek sızıntısı süreç çıkınca bırakıldığı için
+            # nazikçe SIGTERM gönder → Docker restart:unless-stopped taze RSS ile döner.
+            if self.max_uptime_seconds > 0 and now - boot >= self.max_uptime_seconds:
+                self._trigger_restart(now - boot)
+                return  # SIGTERM gönderildi; loop'tan çık (stop_event de set olacak)
             self.stop_event.wait(timeout=self._tick)
 
         logger.info("MaintenanceWorker durdu")
+
+    def _trigger_restart(self, uptime_seconds: float) -> None:
+        """Süreci nazikçe sonlandır (paddle native belleğini bırakmanın tek güvenilir
+        yolu). os.kill(SIGTERM) → uvicorn/sinyal handler yakalar, worker'lar join edilir,
+        süreç 0 ile çıkar, Docker restart:unless-stopped taze RSS ile geri getirir.
+        Panel restart'ı ile aynı mekanizma (app/web/context.py)."""
+        logger.warning(
+            "Uptime %s dk (sınır aşıldı) — paddle bellek sızıntısı için süreç yeniden "
+            "başlatılıyor (SIGTERM).",
+            round(uptime_seconds / 60, 1),
+        )
+        try:
+            os.kill(os.getpid(), signal.SIGTERM)
+        except Exception as e:  # noqa: BLE001
+            logger.exception("Yeniden başlatma SIGTERM gönderilemedi: %s", e)
 
     def _run_cleanup(self):
         if self.retention_days <= 0:

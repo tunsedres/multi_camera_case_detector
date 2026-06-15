@@ -243,6 +243,9 @@ class Application:
                 # geri dönüştür. paddle modu dışında shared_paddle None → atlanır.
                 paddle_recycle_hours=m.paddle_recycle_hours,
                 paddle_recycle=(shared_paddle.recycle if shared_paddle is not None else None),
+                # Periyodik tam süreç yeniden başlatma (paddle native sızıntısı kesin
+                # çözümü — bellek yalnızca süreç çıkınca bırakılır). 0 = kapalı.
+                max_uptime_minutes=m.max_uptime_minutes,
                 stop_event=self.stop_event,
             )
         )

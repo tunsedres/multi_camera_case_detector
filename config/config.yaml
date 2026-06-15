@@ -74,6 +74,13 @@ maintenance:
   # enable_mkldnn=False sızıntıyı zaten kaynağında durdurur; bu emniyet kemeri, uzun
   # çalışmada birikebilecek artık native belleği sıfırlar. 0 = kapalı.
   paddle_recycle_hours: 6
+  # Periyodik TAM süreç yeniden başlatma (paddle native bellek sızıntısı kesin çözümü).
+  # paddlepaddle 2.6.2 her inference'ta ~130 MB/dk native bellek sızdırıyor (üretimde
+  # ölçüldü); bu bellek yalnızca SÜREÇ ÇIKINCA bırakılıyor — enable_mkldnn=False ve
+  # idle-recycle DURDURMADI. Uptime bu süreyi (dk) geçince süreç nazikçe SIGTERM ile
+  # çıkar, Docker restart:unless-stopped taze RSS ile geri getirir (~2-3 sn kesinti).
+  # Runway: boot'tan OOM'a ~68 dk → 45 dk güvenli marj. 0 = kapalı.
+  max_uptime_minutes: 45
 
 # ---- İzleme / sağlık ----
 monitoring:

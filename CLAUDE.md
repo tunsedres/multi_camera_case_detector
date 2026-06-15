@@ -90,6 +90,20 @@ Worker'lar daemon thread; web sunucusu ana thread'i bloklar ve sinyalleri yönet
   sızıntı kaynağında durur. Emniyet kemeri: `PaddleEnginePool.recycle()` boş motorları
   atıp taze kurar, `MaintenanceWorker` periyodik çağırır (`maintenance.paddle_recycle_hours`,
   varsayılan 6 sa; 0=kapalı) → uzun çalışmada artık native büyümeyi sıfırlar.
+- **PaddleOCR native bellek sızıntısı — periyodik süreç restart KESİN çözüm**
+  (`maintenance.max_uptime_minutes`): paddlepaddle 2.6.2 her inference'ta native bellek
+  sızdırır. Üretimde ÖLÇÜLDÜ: ~130 MB/dk lineer, thread sabit (135) → thread değil,
+  per-inference. `enable_mkldnn=False` ve idle-recycle DURDURMADI (motorlar meşgulken
+  sızıyor; paddle belleği yalnızca SÜREÇ ÇIKINCA bırakır). `MaintenanceWorker` uptime
+  sınırında `os.kill(SIGTERM)` → graceful çıkış → Docker `restart:unless-stopped` taze
+  RSS ile döner (panel restart'ıyla aynı mekanizma). 45 dk varsayılan (runway boot→OOM
+  ~68 dk). DERS: bellek sorununda ÖNCE ölç (`/proc/1/status` RSS slope + Threads), sonra
+  düzelt — ekran görüntüsünden teşhis yanıltır (htop thread-başı paylaşılan RSS gösterir).
+- **Thread pinning + mem_limit (yardımcı, bellek sızıntısı DEĞİL)**: Dockerfile
+  `OMP/OPENBLAS/MKL_NUM_THREADS=1` paddle OpenMP oversubscription'ı keser (load ~12 →
+  düşer) ama BELLEĞİ çözmez (ölçümle doğrulandı). `docker-compose.yml` `mem_limit` son
+  emniyet kemeri: restart yanlış ayarlansa bile HOST swap thrash'e düşmez (konteyner
+  OOM-kill+restart). İleride: substream'e geçince per-frame native churn azalır.
 - **Shopify GraphQL** (REST değil): REST Orders API deprecate ediliyor.
   Public arayüz (`ShopifyClient`, `OrderNotFound`, `ShopifyError`) REST'ten miras.
 - **Shopify auth — iki yöntem**: (A) `client_id`+`client_secret` ile

@@ -17,6 +17,11 @@ services:
       - ./logs:/app/logs
     environment:
       - TZ=Europe/Istanbul
+    # EMNİYET KEMERİ: konteyner bellek tavanı. Bir bellek büyümesi olursa konteyner
+    # OOM-kill olur ve 'restart: unless-stopped' geri getirir — HOST (15.6 GB) asla
+    # swap thrash'e düşmez. 15.6 GB host'ta 10 GB güvenli üst sınır (panel+OS'a yer
+    # bırakır). Çok kamerada gerçek ihtiyaç ölçülüp ayarlanmalı.
+    mem_limit: 10g
     healthcheck:
       test: ["CMD", "python", "-m", "app.healthcheck"]
       interval: 30s

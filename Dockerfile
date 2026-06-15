@@ -11,10 +11,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tzdata \
     && rm -rf /var/lib/apt/lists/*
 
+# PaddleOCR (paddlepaddle CPU) OpenMP/MKL kullanır. Bu değişkenler AYARSIZ ise her
+# inference motoru çekirdek SAYISI kadar OpenMP thread açar → çok kameralı makinede
+# yüzlerce thread (üretimde 214 thr gözlendi), aşırı oversubscription (load avg 12),
+# ve thread-başı native scratch bellek birikimi. Thread sayısını sabitleyince hem load
+# hem bellek baskısı düşer. Eşzamanlılık zaten paddle havuzu (paddle_pool_size) ile
+# yönetiliyor; motor-içi OpenMP'yi 1'e sabitlemek güvenli.
 ENV TZ=Europe/Istanbul \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    WEB_PORT=8080
+    WEB_PORT=8080 \
+    OMP_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    FLAGS_use_mkldnn=0
 
 WORKDIR /app
 
