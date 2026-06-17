@@ -39,9 +39,31 @@ query findOrder($q: String!) {
 
 # Order ID (GID) ile doğrudan sorgu. Barkod sipariş ID'sini kodladığı için
 # isimle aramak yerine ID ile çekmek deterministik ve hızlıdır.
+# metafield: tek pinli alana (custom.packing_event) ekleme yapabilmek için mevcut
+# değeri de çekeriz (üzerine yazmak yerine satır ekleyelim).
 _QUERY_GET_ORDER_BY_ID = """
-query getOrder($id: ID!) {
-  order(id: $id) { id name note }
+query getOrder($id: ID!, $ns: String!, $key: String!) {
+  order(id: $id) {
+    id
+    name
+    note
+    metafield(namespace: $ns, key: $key) { value }
+  }
+}
+"""
+
+_QUERY_FIND_ORDER_WITH_MF = """
+query findOrder($q: String!, $ns: String!, $key: String!) {
+  orders(first: 1, query: $q) {
+    edges {
+      node {
+        id
+        name
+        note
+        metafield(namespace: $ns, key: $key) { value }
+      }
+    }
+  }
 }
 """
 
@@ -246,9 +268,21 @@ class ShopifyClient:
         data = self._graphql(_QUERY_SHOP, {})
         return data.get("shop") or {}
 
-    def find_order_by_name(self, name: str) -> dict | None:
-        """Sipariş no ('#1042') ile arar. {id (gid), name, note} döner ya da None."""
-        data = self._graphql(_QUERY_FIND_ORDER, {"q": f"name:{name}"})
+    def find_order_by_name(
+        self, name: str, mf_namespace: str | None = None, mf_key: str | None = None
+    ) -> dict | None:
+        """
+        Sipariş no ('#1042') ile arar. {id (gid), name, note} döner ya da None.
+        mf_namespace+mf_key verilirse node'a ['metafield'] = {value} da eklenir
+        (mevcut metafield'e satır eklemek için tek roundtrip'te okunur).
+        """
+        if mf_namespace and mf_key:
+            data = self._graphql(
+                _QUERY_FIND_ORDER_WITH_MF,
+                {"q": f"name:{name}", "ns": mf_namespace, "key": mf_key},
+            )
+        else:
+            data = self._graphql(_QUERY_FIND_ORDER, {"q": f"name:{name}"})
         edges = ((data.get("orders") or {}).get("edges")) or []
         if not edges:
             return None
@@ -262,10 +296,18 @@ class ShopifyClient:
             return oid
         return f"gid://shopify/Order/{oid}"
 
-    def find_order_by_id(self, order_id: str) -> dict | None:
-        """Order ID (barkod değeri) ile doğrudan çeker. {id, name, note} ya da None."""
+    def find_order_by_id(
+        self, order_id: str, mf_namespace: str = "custom", mf_key: str = "packing_event"
+    ) -> dict | None:
+        """
+        Order ID (barkod değeri) ile doğrudan çeker. {id, name, note, metafield} ya
+        da None. Mevcut metafield değeri de tek roundtrip'te okunur (üzerine yazmak
+        yerine satır eklemek için).
+        """
         gid = self.to_order_gid(order_id)
-        data = self._graphql(_QUERY_GET_ORDER_BY_ID, {"id": gid})
+        data = self._graphql(
+            _QUERY_GET_ORDER_BY_ID, {"id": gid, "ns": mf_namespace, "key": mf_key}
+        )
         return data.get("order")  # yoksa None
 
     def append_to_note(self, order_gid: str, current_note: str | None, new_line: str) -> None:
@@ -275,17 +317,28 @@ class ShopifyClient:
         data = self._graphql(_MUTATION_UPDATE_NOTE, {"id": order_gid, "note": updated})
         self._check_user_errors(data, "orderUpdate")
 
-    def add_metafield(
-        self, order_gid: str, key: str, value: str, namespace: str = "packing"
+    def append_to_metafield(
+        self,
+        order_gid: str,
+        new_line: str,
+        current_value: str | None,
+        namespace: str = "custom",
+        key: str = "packing_event",
     ) -> None:
-        """Siparişe metafield ekler/günceller (namespace+key benzersiz)."""
+        """
+        Tek pinli metafield'e (varsayılan custom.packing_event, multi-line text)
+        yeni satır ekler — üzerine yazmaz. Admin panelinde tanımlı+pinli olduğu için
+        sipariş sayfasında görünür. Her tespit aynı kutuya bir satır ekler.
+        """
+        existing = (current_value or "").strip()
+        updated = f"{existing}\n{new_line}".strip() if existing else new_line
         metafields = [
             {
                 "ownerId": order_gid,
                 "namespace": namespace,
                 "key": key,
                 "type": "multi_line_text_field",
-                "value": value,
+                "value": updated,
             }
         ]
         data = self._graphql(_MUTATION_SET_METAFIELD, {"metafields": metafields})
@@ -300,21 +353,30 @@ class ShopifyClient:
         note_template: str,
         write_note: bool = True,
         write_metafield: bool = True,
-        metafield_namespace: str = "packing",
+        metafield_namespace: str = "custom",
+        metafield_key: str = "packing_event",
         lookup: str = "name",
     ) -> str:
         """
-        Tam akış: sipariş bul → note'a ekle → metafield ekle.
+        Tam akış: sipariş bul → note'a ekle → metafield'e satır ekle.
 
         lookup='name' → order_no bir sipariş ismi ('#1042'); name ile aranır (OCR).
         lookup='id'   → order_no bir Shopify order ID (barkod değeri); ID ile çekilir.
+        Metafield, admin panelinde tanımlı+pinli tek alana (varsayılan
+        custom.packing_event) yazılır → sipariş sayfasında görünür. Her tespit aynı
+        kutuya bir satır ekler (üzerine yazmaz). Mevcut değer sipariş sorgusuyla aynı
+        roundtrip'te okunur.
         OrderNotFound atılırsa retry edilmemeli (sipariş gerçekten yok).
         Sipariş gid döner.
         """
         if lookup == "id":
-            order = self.find_order_by_id(order_no)
+            order = self.find_order_by_id(
+                order_no, mf_namespace=metafield_namespace, mf_key=metafield_key
+            )
         else:
-            order = self.find_order_by_name(order_no)
+            order = self.find_order_by_name(
+                order_no, mf_namespace=metafield_namespace, mf_key=metafield_key
+            )
         if not order:
             raise OrderNotFound(f"Sipariş bulunamadı ({lookup}): {order_no}")
 
@@ -332,8 +394,14 @@ class ShopifyClient:
             self.append_to_note(order_gid, order.get("note"), note_text)
 
         if write_metafield:
-            key = f"event_{int(timestamp.timestamp())}"
-            self.add_metafield(order_gid, key, note_text, namespace=metafield_namespace)
+            current_mf = (order.get("metafield") or {}).get("value")
+            self.append_to_metafield(
+                order_gid,
+                note_text,
+                current_value=current_mf,
+                namespace=metafield_namespace,
+                key=metafield_key,
+            )
 
         logger.info("Shopify'a yazıldı: %s (order_gid=%s)", order_no, order_gid)
         return order_gid

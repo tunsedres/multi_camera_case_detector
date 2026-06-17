@@ -248,6 +248,7 @@ pytest                       # cv2/pyzbar/tesseract yoksa ilgili testler atlanı
 | Yarım/yanlış okuma (#474) | `order_no_regex` ile min hane sayısını yükselt (`\d{6,10}`) · `min_votes` artır (oylama) · görüntüyü netleştir |
 | Shopify'a yazılmıyor | `docker compose logs` · Panel → Olaylar → durum `not_found` (sipariş yok) ya da `failed` (API hatası) |
 | Shopify "Access denied / write_orders" | Shopify Custom App'e **`write_orders`** (+ metafield için `write_metafields`) scope ekle → uygulamayı güncelle → `docker compose restart` |
+| Metafield yazıldı ama sipariş sayfasında görünmüyor | Admin → Settings → Custom data → **Orders** → metafield için **definition** oluştur ve **pin**'le. `shopify.metafield_namespace`+`metafield_key` (varsayılan `custom.packing_event`) bu tanımla **birebir** eşleşmeli. Tanımsız/pinsiz metafield panelde gizlenir ("View all" altında kalır). |
 | Değişiklik etkili olmuyor | kod değiştiyse image'ı **yeniden derle**: `docker compose up --build -d` (yalnız `up` eski image'ı çalıştırır) |
 | Çok false-positive | `min_votes` artır · `dedup_window_seconds` artır · `order_no_regex` daralt |
 | Yüksek CPU | `target_fps` düşür · substream (`/102`) kullan · kullanılmayan kamerayı panelden kapat |

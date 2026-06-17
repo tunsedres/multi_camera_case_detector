@@ -42,6 +42,17 @@ Format [Keep a Changelog](https://keepachangelog.com/) temellidir ve proje
   `.md` dosyalarını da güncellemeli
 
 ### Düzeltildi
+- **Metafield Shopify panelinde görünmüyordu — tanımlı+pinli alana yazılıyor**
+  (`shopify.metafield_namespace` + yeni `shopify.metafield_key`): eskiden metafield
+  `packing` namespace'ine ve her tespitte FARKLI bir key'e (`event_<timestamp>`)
+  yazılıyordu. Bu metafield'in admin'de **tanımı (definition) ve pin'i olmadığı için**
+  Shopify onu sipariş sayfasında gizliyordu ("View all" altında kalıyordu). Artık
+  admin'de tanımlı+pinli **`custom.packing_event`** (multi-line text) alanına yazılıyor
+  → sipariş sayfasında görünüyor. Key artık SABİT; her tespit aynı kutuya bir SATIR
+  ekler (üzerine yazmaz). Mevcut değer sipariş sorgusuyla aynı roundtrip'te okunur.
+  `add_metafield` → `append_to_metafield` olarak yeniden yazıldı.
+  (`app/integrations/shopify_client.py`, `app/shopify_worker.py`, `app/config.py`,
+  `app/app.py`, `config/config.yaml`)
 - **PaddleOCR native bellek sızıntısı — KESİN çözüm: periyodik süreç yeniden başlatma**
   (`maintenance.max_uptime_minutes`, varsayılan 45 dk): paddlepaddle 2.6.2 her inference'ta
   native bellek sızdırıyor — üretimde **ÖLÇÜLDÜ: ~130 MB/dk, lineer**, thread sayısı sabit

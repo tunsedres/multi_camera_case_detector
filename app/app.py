@@ -223,6 +223,7 @@ class Application:
                 write_note=sh.write_to_order_note,
                 write_metafield=sh.write_to_metafield,
                 metafield_namespace=sh.metafield_namespace,
+                metafield_key=sh.metafield_key,
                 poll_interval=sh.poll_interval_seconds,
                 max_retries=sh.max_retries,
                 lookup=lookup,

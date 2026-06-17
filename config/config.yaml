@@ -53,7 +53,11 @@ shopify:
   # yazıyoruz. order.note'u tekrar açmak istersen write_to_order_note: true yap.
   write_to_order_note: false       # order.note'a YAZMA (paylaşılan alan; kirletme)
   write_to_metafield: true         # Kamera + zaman damgası burada (yapısal kayıt)
-  metafield_namespace: "packing"
+  # Admin panelinde TANIMLI + PINLİ order metafield → sipariş sayfasında görünür.
+  # custom.packing_event tanımıyla eşleşir (multi-line text). Tanımsız bir ns/key
+  # yazarsan panel gizler. Her tespit aynı kutuya bir satır ekler (üzerine yazmaz).
+  metafield_namespace: "custom"
+  metafield_key: "packing_event"
   note_template: "📦 [{timestamp}] Paketleme: {camera_name} (Kamera #{camera_id})"
   poll_interval_seconds: 2.0       # ShopifyWorker pending tarama aralığı
   max_retries: 5                   # Başarısız event kaç kez tekrar denensin

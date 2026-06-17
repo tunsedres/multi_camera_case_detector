@@ -184,6 +184,67 @@ def test_log_packing_event_full_flow(client, monkeypatch):
     assert "Masa 3" in note_call["note"]
 
 
+def test_log_packing_event_metafield_appends_to_pinned_field(client, monkeypatch):
+    """Metafield, panelde pinli custom.packing_event'e mevcut değere SATIR ekler."""
+    calls = []
+
+    def fake_graphql(query, variables, **k):
+        calls.append((query, variables))
+        if "findOrder" in query:
+            return {
+                "orders": {
+                    "edges": [
+                        {
+                            "node": {
+                                "id": "gid://1",
+                                "name": "#1042",
+                                "note": None,
+                                "metafield": {"value": "📦 önceki tespit"},
+                            }
+                        }
+                    ]
+                }
+            }
+        if "setMetafield" in query:
+            return {"metafieldsSet": {"metafields": [{"id": "m1"}], "userErrors": []}}
+        return {}
+
+    monkeypatch.setattr(client, "_graphql", fake_graphql)
+    client.log_packing_event(
+        order_no="#1042",
+        camera_id=3,
+        camera_name="Masa 3",
+        timestamp=datetime(2026, 5, 22, 14, 30, 15),
+        note_template="📦 [{timestamp}] {camera_name} (Kamera #{camera_id})",
+        write_note=False,
+    )
+    mf_call = next(v for q, v in calls if "setMetafield" in q)
+    mf = mf_call["metafields"][0]
+    # doğru (pinli) namespace+key
+    assert mf["namespace"] == "custom"
+    assert mf["key"] == "packing_event"
+    assert mf["type"] == "multi_line_text_field"
+    # mevcut değere append yapıldı, üzerine yazılmadı
+    assert mf["value"].startswith("📦 önceki tespit\n")
+    assert "Masa 3" in mf["value"]
+    # mevcut metafield değeri sipariş sorgusunda okundu (ns+key gönderildi)
+    find_call = next(v for q, v in calls if "findOrder" in q)
+    assert find_call["ns"] == "custom"
+    assert find_call["key"] == "packing_event"
+
+
+def test_append_to_metafield_empty_starts_fresh(client, monkeypatch):
+    captured = {}
+
+    def fake_graphql(query, variables, **k):
+        captured["v"] = variables
+        return {"metafieldsSet": {"metafields": [{"id": "m1"}], "userErrors": []}}
+
+    monkeypatch.setattr(client, "_graphql", fake_graphql)
+    client.append_to_metafield("gid://1", "ilk satır", current_value=None)
+    assert captured["v"]["metafields"][0]["value"] == "ilk satır"
+
+
 def test_to_order_gid():
     assert ShopifyClient.to_order_gid("7137311942243") == "gid://shopify/Order/7137311942243"
     assert ShopifyClient.to_order_gid("#7137311942243") == "gid://shopify/Order/7137311942243"

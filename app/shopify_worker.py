@@ -35,7 +35,8 @@ class ShopifyWorker(threading.Thread):
         note_template: str,
         write_note: bool = True,
         write_metafield: bool = True,
-        metafield_namespace: str = "packing",
+        metafield_namespace: str = "custom",
+        metafield_key: str = "packing_event",
         poll_interval: float = 2.0,
         max_retries: int = 5,
         lookup: str = "name",
@@ -49,6 +50,7 @@ class ShopifyWorker(threading.Thread):
         self.write_note = write_note
         self.write_metafield = write_metafield
         self.metafield_namespace = metafield_namespace
+        self.metafield_key = metafield_key
         self.poll_interval = poll_interval
         self.max_retries = max_retries
         # Sipariş arama yöntemi: 'name' (OCR → order name) ya da 'id' (barkod → order ID)
@@ -95,6 +97,7 @@ class ShopifyWorker(threading.Thread):
                 write_note=self.write_note,
                 write_metafield=self.write_metafield,
                 metafield_namespace=self.metafield_namespace,
+                metafield_key=self.metafield_key,
                 lookup=self.lookup,
             )
             self.db.mark_shopify_success(event_id)

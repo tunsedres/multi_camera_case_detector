@@ -90,7 +90,11 @@ class ShopifyConfig(BaseModel):
     # kirletmemek için varsayılan KAPALI. Yapısal kayıt metafield'de tutulur.
     write_to_order_note: bool = False
     write_to_metafield: bool = True
-    metafield_namespace: str = "packing"
+    # Admin panelinde tanımlı+pinli order metafield (sipariş sayfasında görünür).
+    # Varsayılan custom.packing_event tanımıyla eşleşir. Tanımsız/pinlenmemiş bir
+    # namespace+key yazarsan panel onu gizler ("View all" altında kalır).
+    metafield_namespace: str = "custom"
+    metafield_key: str = "packing_event"
     note_template: str = "📦 [{timestamp}] Paketleme: {camera_name} (Kamera #{camera_id})"
     poll_interval_seconds: float = Field(default=2.0, gt=0)
     max_retries: int = Field(default=5, ge=0)
