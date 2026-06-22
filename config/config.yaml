@@ -58,7 +58,7 @@ shopify:
   # yazarsan panel gizler. Her tespit aynı kutuya bir satır ekler (üzerine yazmaz).
   metafield_namespace: "custom"
   metafield_key: "packing_event"
-  note_template: "📦 [{timestamp}] Paketleme: {camera_name} (Kamera #{camera_id})"
+  note_template: "📦 [{timestamp}] Paketleme: {camera_name}"
   poll_interval_seconds: 2.0       # ShopifyWorker pending tarama aralığı
   max_retries: 5                   # Başarısız event kaç kez tekrar denensin
 

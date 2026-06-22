@@ -95,7 +95,7 @@ class ShopifyConfig(BaseModel):
     # namespace+key yazarsan panel onu gizler ("View all" altında kalır).
     metafield_namespace: str = "custom"
     metafield_key: str = "packing_event"
-    note_template: str = "📦 [{timestamp}] Paketleme: {camera_name} (Kamera #{camera_id})"
+    note_template: str = "📦 [{timestamp}] Paketleme: {camera_name}"
     poll_interval_seconds: float = Field(default=2.0, gt=0)
     max_retries: int = Field(default=5, ge=0)
 

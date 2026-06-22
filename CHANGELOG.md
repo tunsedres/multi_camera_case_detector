@@ -96,6 +96,10 @@ Format [Keep a Changelog](https://keepachangelog.com/) temellidir ve proje
   thread'e ödünç verilir.
 
 ### Değişti
+- **Paketleme etiketinden `(Kamera #N)` kaldırıldı**: artık yalnızca kamera adı
+  yazılıyor (ör. "📦 [...] Paketleme: Masa 2"). Müşteri talebi: kamera ID gürültü
+  yapıyor, ad yeterli. `note_template` varsayılanı `config.py` ve `config.yaml`'da
+  güncellendi; `{camera_id}` placeholder'ı isteyen kendi şablonunda kullanabilir.
 - **Paketleme bilgisi artık order.note yerine yalnızca metafield'e yazılıyor**
   (`shopify.write_to_order_note: false` varsayılan). Müşteri talebi: bilgi
   paylaşılan Notes kutusunu kirletmesin, Timeline'da görünsün. Ancak Shopify Admin
