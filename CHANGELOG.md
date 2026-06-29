@@ -7,6 +7,15 @@ Format [Keep a Changelog](https://keepachangelog.com/) temellidir ve proje
 ## [Unreleased]
 
 ### Eklendi
+- **Siparişi otomatik fulfilled işaretleme** (`shopify.fulfill_order`, varsayılan
+  açık): paketleme tespit edilip metafield yazıldıktan sonra sipariş Shopify'da
+  **FULFILLED (kargolandı)** olarak işaretlenir. Açık (OPEN) fulfillment order'lar
+  tüm kalemleriyle `fulfillmentCreate` ile fulfill edilir; zaten fulfilled sipariş
+  idempotent (tekrar tespitte sessizce atlanır, hata vermez).
+  `shopify.notify_customer` (varsayılan açık) ise Shopify müşteriye kargo bildirimi
+  e-postası gönderir. `ShopifyClient.fulfill_order()` eklendi; `log_packing_event`
+  `fulfill`/`notify_customer` parametreleriyle akışı tamamlar; `ShopifyWorker`
+  config'ten geçirir.
 - **Tespit motorları — OCR / PaddleOCR / YOLO** (`detection.mode`): etiketteki
   sipariş numarasını okumak için çoklu yöntem. `paddle` (PaddleOCR, **varsayılan** —
   en doğru, offline gömülü model), `ocr` (Tesseract — hızlı ama rakam karıştırabilir),
@@ -40,6 +49,19 @@ Format [Keep a Changelog](https://keepachangelog.com/) temellidir ve proje
   sürüm öncesi kontrol listesi
 - CLAUDE.md'ye **dokümantasyon disiplini** kuralı: her geliştirme/fix ilgili
   `.md` dosyalarını da güncellemeli
+
+### Değiştirildi
+- **Çoklu-kare oylama kapatıldı + frame throughput artırıldı** — yoğun saatte
+  atlanan siparişler (`detection.min_votes` 3→1, `target_fps` 1→2, `paddle_pool_size`
+  2→3): üretimde 26 Haziran 23:25–23:38 penceresinde ~64 siparişlik aralıktan yalnız
+  13'ü yazılmıştı. Sebep: hızlı paketlemede etiket masada 2-3 sn kalıyor; `target_fps:1`
+  ile 1-2 OCR geçişi olabiliyordu ama oylama bir numarayı 4 sn içinde **3 kez** okumayı
+  şart koşuyordu → 1-2 oyda kalan etiketler SESSİZCE düşüyordu. Birden çok kamera aynı
+  anda okurken paylaşılan 2-motorlu havuz (2 × ~0.9 sn = ~2 kare/sn) doluyor, kamera
+  başına efektif fps daha da düşüyordu. Çözüm: oylamayı kapat (her okuma anında tetikler),
+  fps'i 2'ye, havuzu 3 motora çıkar. **Yanlış okuma riski düşük**: Shopify'da olmayan
+  numara → `OrderNotFound` → yazılmaz (zararsız). Kalan korumalar: `paddle_min_confidence`
+  (0.80) + zorunlu `#` regex + `dedup_mode: daily`. (`config/config.yaml`)
 
 ### Düzeltildi
 - **Metafield Shopify panelinde görünmüyordu — tanımlı+pinli alana yazılıyor**

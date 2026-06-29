@@ -317,6 +317,159 @@ def test_log_packing_event_by_id_not_found(client, monkeypatch):
         )
 
 
+def test_fulfill_order_creates_fulfillment(client, monkeypatch):
+    """Açık fulfillment order'lar fulfillmentCreate'e geçilir, notifyCustomer set edilir."""
+    calls = []
+
+    def fake_graphql(query, variables, **k):
+        calls.append((query, variables))
+        if "fulfillmentOrders" in query:
+            return {
+                "order": {
+                    "id": "gid://shopify/Order/1",
+                    "displayFulfillmentStatus": "UNFULFILLED",
+                    "fulfillmentOrders": {
+                        "edges": [
+                            {"node": {"id": "gid://shopify/FulfillmentOrder/11", "status": "OPEN"}}
+                        ]
+                    },
+                }
+            }
+        if "fulfillmentCreate" in query:
+            return {
+                "fulfillmentCreate": {
+                    "fulfillment": {"id": "gid://shopify/Fulfillment/99", "status": "SUCCESS"},
+                    "userErrors": [],
+                }
+            }
+        return {}
+
+    monkeypatch.setattr(client, "_graphql", fake_graphql)
+    assert client.fulfill_order("gid://shopify/Order/1", notify_customer=True) is True
+    create_call = next(v for q, v in calls if "fulfillmentCreate" in q)
+    fulfillment = create_call["fulfillment"]
+    assert fulfillment["notifyCustomer"] is True
+    assert fulfillment["lineItemsByFulfillmentOrder"] == [
+        {"fulfillmentOrderId": "gid://shopify/FulfillmentOrder/11"}
+    ]
+
+
+def test_fulfill_order_already_fulfilled_is_idempotent(client, monkeypatch):
+    """Açık fulfillment order yoksa (zaten fulfilled) sessizce False döner, hata vermez."""
+    calls = []
+
+    def fake_graphql(query, variables, **k):
+        calls.append(query)
+        return {
+            "order": {
+                "id": "gid://shopify/Order/1",
+                "displayFulfillmentStatus": "FULFILLED",
+                "fulfillmentOrders": {"edges": []},
+            }
+        }
+
+    monkeypatch.setattr(client, "_graphql", fake_graphql)
+    assert client.fulfill_order("gid://shopify/Order/1") is False
+    # fulfillmentCreate hiç çağrılmamalı
+    assert not any("fulfillmentCreate" in q for q in calls)
+
+
+def test_fulfill_order_user_errors_raise(client, monkeypatch):
+    def fake_graphql(query, variables, **k):
+        if "fulfillmentOrders" in query:
+            return {
+                "order": {
+                    "displayFulfillmentStatus": "UNFULFILLED",
+                    "fulfillmentOrders": {
+                        "edges": [{"node": {"id": "gid://fo/1", "status": "OPEN"}}]
+                    },
+                }
+            }
+        return {
+            "fulfillmentCreate": {
+                "fulfillment": None,
+                "userErrors": [{"field": "id", "message": "boom"}],
+            }
+        }
+
+    monkeypatch.setattr(client, "_graphql", fake_graphql)
+    with pytest.raises(ShopifyError, match="userErrors"):
+        client.fulfill_order("gid://shopify/Order/1")
+
+
+def test_log_packing_event_fulfills_after_writes(client, monkeypatch):
+    """fulfill=True: note+metafield yazıldıktan sonra fulfillment oluşturulur."""
+    calls = []
+
+    def fake_graphql(query, variables, **k):
+        calls.append(query)
+        if "findOrder" in query:
+            return {
+                "orders": {
+                    "edges": [{"node": {"id": "gid://1", "name": "#1042", "note": None}}]
+                }
+            }
+        if "updateNote" in query:
+            return {"orderUpdate": {"order": {"id": "gid://1"}, "userErrors": []}}
+        if "setMetafield" in query:
+            return {"metafieldsSet": {"metafields": [{"id": "m1"}], "userErrors": []}}
+        if "fulfillmentOrders" in query:
+            return {
+                "order": {
+                    "displayFulfillmentStatus": "UNFULFILLED",
+                    "fulfillmentOrders": {
+                        "edges": [{"node": {"id": "gid://fo/1", "status": "OPEN"}}]
+                    },
+                }
+            }
+        if "fulfillmentCreate" in query:
+            return {
+                "fulfillmentCreate": {"fulfillment": {"id": "f1"}, "userErrors": []}
+            }
+        return {}
+
+    monkeypatch.setattr(client, "_graphql", fake_graphql)
+    client.log_packing_event(
+        order_no="#1042",
+        camera_id=3,
+        camera_name="Masa 3",
+        timestamp=datetime(2026, 5, 22, 14, 30, 15),
+        note_template="📦 {camera_name}",
+        fulfill=True,
+        notify_customer=True,
+    )
+    # fulfillment, metafield yazımından SONRA gelmeli
+    assert any("fulfillmentCreate" in q for q in calls)
+    mf_idx = next(i for i, q in enumerate(calls) if "setMetafield" in q)
+    fc_idx = next(i for i, q in enumerate(calls) if "fulfillmentCreate" in q)
+    assert fc_idx > mf_idx
+
+
+def test_log_packing_event_no_fulfill_by_default(client, monkeypatch):
+    """fulfill=False (varsayılan): fulfillment çağrısı yapılmaz."""
+    calls = []
+
+    def fake_graphql(query, variables, **k):
+        calls.append(query)
+        if "findOrder" in query:
+            return {
+                "orders": {"edges": [{"node": {"id": "gid://1", "name": "#1042", "note": None}}]}
+            }
+        if "setMetafield" in query:
+            return {"metafieldsSet": {"metafields": [{"id": "m1"}], "userErrors": []}}
+        return {"orderUpdate": {"order": {"id": "gid://1"}, "userErrors": []}}
+
+    monkeypatch.setattr(client, "_graphql", fake_graphql)
+    client.log_packing_event(
+        order_no="#1042",
+        camera_id=3,
+        camera_name="Masa 3",
+        timestamp=datetime(2026, 5, 22, 14, 30, 15),
+        note_template="📦 {camera_name}",
+    )
+    assert not any("fulfillment" in q.lower() for q in calls)
+
+
 def test_throttle_wait_calc():
     body = {
         "extensions": {

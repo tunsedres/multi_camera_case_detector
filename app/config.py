@@ -98,6 +98,11 @@ class ShopifyConfig(BaseModel):
     note_template: str = "📦 [{timestamp}] Paketleme: {camera_name}"
     poll_interval_seconds: float = Field(default=2.0, gt=0)
     max_retries: int = Field(default=5, ge=0)
+    # Paketleme tespit edilince siparişi fulfilled (kargolandı) olarak işaretle.
+    # Açık fulfillment order'lar fulfill edilir; zaten fulfilled sipariş idempotent.
+    fulfill_order: bool = True
+    # fulfill_order True iken müşteriye Shopify kargo bildirimi e-postası gönderilsin mi.
+    notify_customer: bool = True
 
 
 class StorageConfig(BaseModel):

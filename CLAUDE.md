@@ -106,6 +106,16 @@ Worker'lar daemon thread; web sunucusu ana thread'i bloklar ve sinyalleri yönet
   OOM-kill+restart). İleride: substream'e geçince per-frame native churn azalır.
 - **Shopify GraphQL** (REST değil): REST Orders API deprecate ediliyor.
   Public arayüz (`ShopifyClient`, `OrderNotFound`, `ShopifyError`) REST'ten miras.
+- **Siparişi fulfill etme — fulfillment order üzerinden** (`shopify.fulfill_order`):
+  modern GraphQL'de sipariş doğrudan fulfill EDİLMEZ; her sipariş lokasyon başına
+  `fulfillmentOrder`'lara bölünür ve bunlar fulfill edilir. `fulfill_order` önce açık
+  (`status:open`) fulfillment order'ları çeker, sonra `fulfillmentCreate` ile hepsini
+  (tüm kalemler) fulfill eder. Açık fulfillment order yoksa (zaten fulfilled) sessizce
+  `False` döner → **idempotent**: aynı sipariş tekrar tespit edilse hata vermez.
+  `log_packing_event` metafield yazımından SONRA çağırır (sipariş gid zaten elde,
+  ekstra lookup yok). `notify_customer` Shopify müşteri kargo e-postasını tetikler.
+  Scope: **`write_orders` zorunlu** (`read_orders` yetmez). Worker bunu config'ten
+  geçirir; varsayılan açık.
 - **Shopify auth — iki yöntem**: (A) `client_id`+`client_secret` ile
   client_credentials token akışı (önerilen; `TokenProvider` token'ı önbelleğe alır,
   süre dolmadan/401'de otomatik yeniler) veya (B) statik `SHOPIFY_ACCESS_TOKEN`

@@ -40,6 +40,8 @@ class ShopifyWorker(threading.Thread):
         poll_interval: float = 2.0,
         max_retries: int = 5,
         lookup: str = "name",
+        fulfill_order: bool = False,
+        notify_customer: bool = True,
         health: HealthRegistry | None = None,
         stop_event: threading.Event | None = None,
     ):
@@ -53,6 +55,10 @@ class ShopifyWorker(threading.Thread):
         self.metafield_key = metafield_key
         self.poll_interval = poll_interval
         self.max_retries = max_retries
+        # Tespit sonrası siparişi fulfilled (kargolandı) işaretle; notify_customer
+        # ise müşteriye Shopify kargo bildirimi e-postası gönderilir.
+        self.fulfill_order = fulfill_order
+        self.notify_customer = notify_customer
         # Sipariş arama yöntemi: 'name' (OCR → order name) ya da 'id' (barkod → order ID)
         self.lookup = lookup
         self.health = health
@@ -99,6 +105,8 @@ class ShopifyWorker(threading.Thread):
                 metafield_namespace=self.metafield_namespace,
                 metafield_key=self.metafield_key,
                 lookup=self.lookup,
+                fulfill=self.fulfill_order,
+                notify_customer=self.notify_customer,
             )
             self.db.mark_shopify_success(event_id)
             if self.health:

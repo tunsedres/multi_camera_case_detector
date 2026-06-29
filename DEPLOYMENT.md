@@ -110,6 +110,14 @@ Docker auto-start + `restart: unless-stopped` ile sistem kendiliğinden kalkar.
 - **API sürümü deprecation**: Shopify her çeyrek sürüm düşürür. `.env`
   `SHOPIFY_API_VERSION`'ı yılda ~1 güncelle (örn. `2025-01` → `2025-10`).
 - `not_found` çok çıkıyorsa: `order_no_regex` yanlış olabilir ya da sipariş gerçekten yok.
+- **Otomatik fulfillment + müşteri e-postası** (`shopify.fulfill_order` /
+  `notify_customer`, ikisi de varsayılan AÇIK): tespit edilen sipariş Shopify'da
+  fulfilled işaretlenir ve müşteriye **kargo bildirimi e-postası gider**. App scope'unda
+  **`write_orders` zorunlu** (yoksa fulfillment `userErrors` ile başarısız → event
+  `failed`). ⚠️ Risk: yanlış/erken tespit → yanlış müşteriye "kargolandı" e-postası.
+  `notify_customer: false` (e-posta gitmez, içeride fulfilled olur) ya da
+  `fulfill_order: false` (tamamen kapalı) ile kademeli aç. Go-live öncesi test
+  mağazasında doğrula. Tek koruma: `paddle_min_confidence` + zorunlu `#` regex.
 
 ### 3.8 📷 Sessiz kamera arızası
 Bir kamera frame üretmeyi durdurursa tespit sessizce durur. Panel dashboard kamerayı

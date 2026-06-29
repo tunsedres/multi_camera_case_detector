@@ -166,6 +166,21 @@ dolunca **otomatik yenilenir** (elle token kopyalamak gerekmez, expire sorunu yo
 Bağlantıyı doğrula: `python scripts/test_shopify.py` (token testi) ·
 `python scripts/test_shopify.py "#1001"` (gerçek siparişe test yorumu).
 
+### Siparişi otomatik fulfilled işaretleme
+
+Paketleme tespit edilip metafield yazıldıktan sonra sistem siparişi Shopify'da
+**fulfilled (kargolandı)** olarak işaretler (`config.yaml` `shopify.fulfill_order`,
+**varsayılan açık**). `shopify.notify_customer` açıkken (varsayılan) Shopify müşteriye
+**kargo bildirimi e-postası** gönderir — yani kamera etiketi gördüğü an müşteri
+"siparişiniz kargolandı" e-postası alır.
+
+- Bunun için app scope'unda **`write_orders`** zorunlu (yukarıda listelendi).
+- Zaten fulfilled bir sipariş tekrar tespit edilirse idempotenttir (sessizce
+  atlanır, hata vermez).
+- Paketleme ile kargolama **aynı an değilse** (paketleyip sonra kargoluyorsan)
+  `notify_customer: false` yap: sipariş içeride fulfilled olur ama müşteriye e-posta
+  gitmez. Fulfillment'ı tamamen kapatmak için `fulfill_order: false`.
+
 ---
 
 ## Admin Web Panel

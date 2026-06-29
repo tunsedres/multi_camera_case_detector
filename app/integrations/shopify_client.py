@@ -85,6 +85,30 @@ mutation setMetafield($metafields: [MetafieldsSetInput!]!) {
 }
 """
 
+# Siparişi fulfill etmek için: önce açık (OPEN) fulfillment order'ları çekeriz.
+# Modern GraphQL'de sipariş doğrudan fulfill edilmez; her sipariş bir veya birden
+# çok fulfillmentOrder'a bölünür (lokasyon başına) ve bunlar fulfill edilir.
+_QUERY_FULFILLMENT_ORDERS = """
+query fulfillmentOrders($id: ID!) {
+  order(id: $id) {
+    id
+    displayFulfillmentStatus
+    fulfillmentOrders(first: 10, query: "status:open") {
+      edges { node { id status } }
+    }
+  }
+}
+"""
+
+_MUTATION_FULFILLMENT_CREATE = """
+mutation fulfillmentCreate($fulfillment: FulfillmentInput!) {
+  fulfillmentCreate(fulfillment: $fulfillment) {
+    fulfillment { id status }
+    userErrors { field message }
+  }
+}
+"""
+
 _QUERY_SHOP = "query { shop { name myshopifyDomain } }"
 
 
@@ -344,6 +368,42 @@ class ShopifyClient:
         data = self._graphql(_MUTATION_SET_METAFIELD, {"metafields": metafields})
         self._check_user_errors(data, "metafieldsSet")
 
+    def fulfill_order(self, order_gid: str, notify_customer: bool = True) -> bool:
+        """
+        Siparişi fulfilled (kargolandı) olarak işaretler.
+
+        Modern GraphQL'de sipariş doğrudan fulfill edilmez: açık (OPEN) fulfillment
+        order'lar çekilir ve her biri fulfillmentCreate ile fulfill edilir (tüm
+        kalemler). notify_customer=True ise Shopify müşteriye kargo bildirimi e-postası
+        gönderir.
+
+        Zaten fulfilled (açık fulfillment order yok) ise sessizce False döner —
+        tekrar tespit edilen sipariş hata vermez (idempotent).
+
+        Döner: en az bir fulfillment oluşturulduysa True, yapacak iş yoksa False.
+        """
+        data = self._graphql(_QUERY_FULFILLMENT_ORDERS, {"id": order_gid})
+        order = data.get("order") or {}
+        edges = ((order.get("fulfillmentOrders") or {}).get("edges")) or []
+        fo_ids = [e["node"]["id"] for e in edges]
+        if not fo_ids:
+            # Açık fulfillment order yok → ya zaten fulfilled ya da fulfill edilemez.
+            logger.info(
+                "Fulfill atlandı (açık fulfillment order yok): %s (durum=%s)",
+                order_gid,
+                order.get("displayFulfillmentStatus"),
+            )
+            return False
+
+        fulfillment = {
+            "lineItemsByFulfillmentOrder": [{"fulfillmentOrderId": fo_id} for fo_id in fo_ids],
+            "notifyCustomer": notify_customer,
+        }
+        data = self._graphql(_MUTATION_FULFILLMENT_CREATE, {"fulfillment": fulfillment})
+        self._check_user_errors(data, "fulfillmentCreate")
+        logger.info("Sipariş fulfilled: %s (bildirim=%s)", order_gid, notify_customer)
+        return True
+
     def log_packing_event(
         self,
         order_no: str,
@@ -356,9 +416,11 @@ class ShopifyClient:
         metafield_namespace: str = "custom",
         metafield_key: str = "packing_event",
         lookup: str = "name",
+        fulfill: bool = False,
+        notify_customer: bool = True,
     ) -> str:
         """
-        Tam akış: sipariş bul → note'a ekle → metafield'e satır ekle.
+        Tam akış: sipariş bul → note'a ekle → metafield'e satır ekle → (opsiyonel) fulfill.
 
         lookup='name' → order_no bir sipariş ismi ('#1042'); name ile aranır (OCR).
         lookup='id'   → order_no bir Shopify order ID (barkod değeri); ID ile çekilir.
@@ -366,6 +428,9 @@ class ShopifyClient:
         custom.packing_event) yazılır → sipariş sayfasında görünür. Her tespit aynı
         kutuya bir satır ekler (üzerine yazmaz). Mevcut değer sipariş sorgusuyla aynı
         roundtrip'te okunur.
+        fulfill=True ise paketleme bilgisi yazıldıktan sonra sipariş fulfilled
+        (kargolandı) olarak işaretlenir; notify_customer ise müşteriye kargo bildirimi
+        e-postası gönderilir. Zaten fulfilled sipariş idempotent (hata vermez).
         OrderNotFound atılırsa retry edilmemeli (sipariş gerçekten yok).
         Sipariş gid döner.
         """
@@ -402,6 +467,9 @@ class ShopifyClient:
                 namespace=metafield_namespace,
                 key=metafield_key,
             )
+
+        if fulfill:
+            self.fulfill_order(order_gid, notify_customer=notify_customer)
 
         logger.info("Shopify'a yazıldı: %s (order_gid=%s)", order_no, order_gid)
         return order_gid

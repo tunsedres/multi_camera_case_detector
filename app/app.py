@@ -227,6 +227,8 @@ class Application:
                 poll_interval=sh.poll_interval_seconds,
                 max_retries=sh.max_retries,
                 lookup=lookup,
+                fulfill_order=sh.fulfill_order,
+                notify_customer=sh.notify_customer,
                 health=self.health,
                 stop_event=self.stop_event,
             )
