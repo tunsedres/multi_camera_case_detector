@@ -70,9 +70,12 @@ Format [Keep a Changelog](https://keepachangelog.com/) temellidir ve proje
 
 ### Düzeltildi
 - **`scripts/` dizini Docker image'ına kopyalanmıyordu**: Dockerfile yalnızca
-  `app/`, `models/`, `VERSION` kopyalıyordu → `scripts/check_shopify_scopes.py` gibi
-  yardımcı scriptler konteynerde yoktu (`docker exec ... python scripts/...` →
-  "No such file or directory"). `COPY scripts/ ./scripts/` eklendi.
+  `app/`, `models/`, `VERSION` kopyalıyordu **ve** `.dockerignore` `scripts/`'i
+  build context'ten dışlıyordu → yardımcı scriptler konteynerde yoktu
+  (`docker exec ... python scripts/...` → "No such file or directory"; rebuild'de
+  `COPY scripts/` → `"/scripts": not found`). Dockerfile'a `COPY scripts/ ./scripts/`
+  eklendi ve `.dockerignore`'daki `scripts/` dışlaması kaldırıldı (operasyonel teşhis
+  araçları konteynerden çalışsın).
 - **Otomatik fulfillment sessizce atlanıyordu (scope eksikliği)** (üretimde #966695):
   not/metafield yazılıyor ama sipariş fulfilled olmuyordu. Sebep: `fulfillmentCreate`
   `write_orders` DEĞİL ayrı **fulfillment-order** scope'larını ister

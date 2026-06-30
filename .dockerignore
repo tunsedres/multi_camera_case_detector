@@ -28,7 +28,9 @@ htmlcov/
 
 # Geliştirme / test (image'a gerekmez)
 tests/
-scripts/
+# scripts/ image'a DAHİL edilir: operasyonel teşhis araçları (check_shopify_scopes,
+# test_shopify, test_camera) konteyner içinden `docker exec ... python scripts/...`
+# ile çalıştırılıyor. Dockerfile `COPY scripts/ ./scripts/` ile alır.
 *.md
 *.zip
 release/
