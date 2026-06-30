@@ -7,6 +7,10 @@ Format [Keep a Changelog](https://keepachangelog.com/) temellidir ve proje
 ## [Unreleased]
 
 ### Eklendi
+- **`test_shopify.py --fulfill` bayrağı**: kameradan bağımsız, mesai dışında
+  fulfillment'ı gerçek bir siparişte test etmek için. Varsayılan olarak müşteriye
+  e-posta GÖNDERMEZ (`notify_customer=False`); gerçek kargo bildirimi için `--notify`
+  ekle. Onay sorar.
 - **Scope doğrulama scripti** (`scripts/check_shopify_scopes.py`): canlı Shopify
   token'ının GERÇEK scope listesini (`currentAppInstallation.accessScopes`) çeker ve
   fulfillment için gereken `read/write_merchant_managed_fulfillment_orders`

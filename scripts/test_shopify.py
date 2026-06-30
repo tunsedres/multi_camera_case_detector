@@ -46,11 +46,20 @@ def main() -> int:
         print(f"❌ Bağlantı/token hatası: {e}")
         return 1
 
-    if len(sys.argv) < 2:
+    # --fulfill: not/metafield yerine FULFILLMENT'ı test et (kameradan bağımsız,
+    # mesai dışı doğrulama için). Varsayılan olarak müşteriye e-POSTA GÖNDERMEZ;
+    # gerçek kargo bildirimi için --notify ekle.
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    test_fulfill = "--fulfill" in sys.argv
+    notify = "--notify" in sys.argv
+
+    if not args:
         print("\nSipariş testi için: python scripts/test_shopify.py '#1001'")
+        print("Fulfillment testi:   python scripts/test_shopify.py '#1001' --fulfill")
+        print("  (--notify eklenirse müşteriye GERÇEK kargo e-postası gider)")
         return 0
 
-    order_no = sys.argv[1]
+    order_no = args[0]
     print(f"\nSipariş aranıyor: {order_no}")
     try:
         order = client.find_order_by_name(order_no)
@@ -60,6 +69,26 @@ def main() -> int:
 
         print(f"✓ Bulundu: {order['name']} (id={order['id']})")
         print(f"  Mevcut not: {order.get('note') or '(boş)'}")
+
+        if test_fulfill:
+            email_msg = (
+                "MÜŞTERİYE KARGO E-POSTASI GÖNDERİLECEK"
+                if notify
+                else "müşteriye e-posta GÖNDERİLMEYECEK (--notify yok)"
+            )
+            print(f"\n⚠️  Bu sipariş FULFILLED işaretlenecek — {email_msg}.")
+            if input("Devam? (e/h): ").strip().lower() != "e":
+                print("İptal edildi.")
+                return 0
+            did = client.fulfill_order(order["id"], notify_customer=notify)
+            if did:
+                print("✓ Fulfillment oluşturuldu. Shopify admin > Orders'ta 'Fulfilled' olmalı.")
+            else:
+                print(
+                    "ℹ️  Fulfill atlandı — açık fulfillment order yok "
+                    "(sipariş zaten fulfilled olabilir). Logda detay var."
+                )
+            return 0
 
         if input("\nTest yorumu eklensin mi? (e/h): ").strip().lower() != "e":
             print("İptal edildi.")
