@@ -384,15 +384,29 @@ class ShopifyClient:
         """
         data = self._graphql(_QUERY_FULFILLMENT_ORDERS, {"id": order_gid})
         order = data.get("order") or {}
+        status = order.get("displayFulfillmentStatus")
         edges = ((order.get("fulfillmentOrders") or {}).get("edges")) or []
         fo_ids = [e["node"]["id"] for e in edges]
         if not fo_ids:
-            # Açık fulfillment order yok → ya zaten fulfilled ya da fulfill edilemez.
-            logger.info(
-                "Fulfill atlandı (açık fulfillment order yok): %s (durum=%s)",
-                order_gid,
-                order.get("displayFulfillmentStatus"),
-            )
+            # Açık fulfillment order yok. İki ihtimal:
+            #  (a) sipariş zaten fulfilled (durum FULFILLED) → idempotent, normal.
+            #  (b) durum hâlâ UNFULFILLED ama liste boş → app'te fulfillment-order
+            #      scope'u eksik (Order.fulfillmentOrders scope'a göre filtrelenir,
+            #      write_orders bunu KAPSAMAZ). Bu sessiz başarısızlık → uyar.
+            if status and status != "FULFILLED":
+                logger.warning(
+                    "Fulfill atlandı: %s UNFULFILLED ama açık fulfillment order görünmüyor — "
+                    "app'te read/write_merchant_managed_fulfillment_orders scope'u EKSİK olabilir "
+                    "(write_orders fulfillment'ı kapsamaz). (durum=%s)",
+                    order_gid,
+                    status,
+                )
+            else:
+                logger.info(
+                    "Fulfill atlandı (zaten fulfilled / açık fulfillment order yok): %s (durum=%s)",
+                    order_gid,
+                    status,
+                )
             return False
 
         fulfillment = {

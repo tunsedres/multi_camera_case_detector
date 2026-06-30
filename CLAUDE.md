@@ -114,8 +114,15 @@ Worker'lar daemon thread; web sunucusu ana thread'i bloklar ve sinyalleri yönet
   `False` döner → **idempotent**: aynı sipariş tekrar tespit edilse hata vermez.
   `log_packing_event` metafield yazımından SONRA çağırır (sipariş gid zaten elde,
   ekstra lookup yok). `notify_customer` Shopify müşteri kargo e-postasını tetikler.
-  Scope: **`write_orders` zorunlu** (`read_orders` yetmez). Worker bunu config'ten
-  geçirir; varsayılan açık.
+  Worker bunu config'ten geçirir; varsayılan açık.
+  **Scope tuzağı (üretimde yaşandı, sipariş #966695)**: fulfillment için
+  `write_orders` YETMEZ — `fulfillmentCreate` ayrı **fulfillment-order scope'ları**
+  ister (`write_merchant_managed_fulfillment_orders` + okuma tarafı
+  `read_merchant_managed_fulfillment_orders`). Üstelik `Order.fulfillmentOrders`
+  bu scope'a göre filtrelenir: scope eksikse liste BOŞ döner → `fulfill_order`
+  hata değil `False` üretir, not/metafield yazılmış olur ama sipariş fulfilled OLMAZ
+  (sessiz başarısızlık). Bu yüzden `fulfill_order` durum UNFULFILLED iken liste boşsa
+  artık `warning` basar (scope eksikliğini işaret eder).
 - **Shopify auth — iki yöntem**: (A) `client_id`+`client_secret` ile
   client_credentials token akışı (önerilen; `TokenProvider` token'ı önbelleğe alır,
   süre dolmadan/401'de otomatik yeniler) veya (B) statik `SHOPIFY_ACCESS_TOKEN`

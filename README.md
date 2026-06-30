@@ -132,7 +132,12 @@ ediliyor).
 
 1. Shopify admin → **Settings → Apps and sales channels → Develop apps**
 2. **Create an app** → isim ver (örn. "Packing Detector")
-3. **Configure Admin API scopes**: `read_orders`, `write_orders`
+3. **Configure Admin API scopes**: `read_orders`, `write_orders` (not/metafield için).
+   Otomatik fulfillment kullanıyorsan (varsayılan AÇIK) ek olarak **`read_merchant_managed_fulfillment_orders`**
+   ve **`write_merchant_managed_fulfillment_orders`** ekle — `write_orders` fulfillment'ı
+   KAPSAMAZ; eksikse not/metafield yazılır ama sipariş sessizce fulfilled olmaz.
+   (3rd-party fulfillment servisi kullanıyorsan `*_third_party_fulfillment_orders` çiftini de ekle.)
+   ⚠️ Scope ekledikten sonra app'i **yeniden yükle/yetkilendir** (yeni scope'lar token'a yansısın).
 
 İki kimlik doğrulama yöntemi var — **birini** seç:
 
@@ -174,7 +179,15 @@ Paketleme tespit edilip metafield yazıldıktan sonra sistem siparişi Shopify'd
 **kargo bildirimi e-postası** gönderir — yani kamera etiketi gördüğü an müşteri
 "siparişiniz kargolandı" e-postası alır.
 
-- Bunun için app scope'unda **`write_orders`** zorunlu (yukarıda listelendi).
+- Bunun için app scope'unda **fulfillment-order** scope'ları zorunlu:
+  `read_merchant_managed_fulfillment_orders` + `write_merchant_managed_fulfillment_orders`
+  (yukarıda listelendi). **`write_orders` fulfillment'ı KAPSAMAZ.** Eksikse: not/metafield
+  yazılır ama `Order.fulfillmentOrders` scope'a göre filtrelendiği için boş döner →
+  fulfill sessizce atlanır (sipariş fulfilled OLMAZ, hata da vermez). Logda
+  "Fulfill atlandı (açık fulfillment order yok)" görürsen ve sipariş gerçekten
+  unfulfilled ise neredeyse kesin eksik scope'tur.
+  **Scope'u doğrula:** `python scripts/check_shopify_scopes.py` — canlı token'ın
+  GERÇEK scope listesini çeker ve eksik fulfillment scope'larını işaretler.
 - Zaten fulfilled bir sipariş tekrar tespit edilirse idempotenttir (sessizce
   atlanır, hata vermez).
 - Paketleme ile kargolama **aynı an değilse** (paketleyip sonra kargoluyorsan)

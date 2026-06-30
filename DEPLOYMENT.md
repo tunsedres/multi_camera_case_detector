@@ -112,9 +112,15 @@ Docker auto-start + `restart: unless-stopped` ile sistem kendiliğinden kalkar.
 - `not_found` çok çıkıyorsa: `order_no_regex` yanlış olabilir ya da sipariş gerçekten yok.
 - **Otomatik fulfillment + müşteri e-postası** (`shopify.fulfill_order` /
   `notify_customer`, ikisi de varsayılan AÇIK): tespit edilen sipariş Shopify'da
-  fulfilled işaretlenir ve müşteriye **kargo bildirimi e-postası gider**. App scope'unda
-  **`write_orders` zorunlu** (yoksa fulfillment `userErrors` ile başarısız → event
-  `failed`). ⚠️ Risk: yanlış/erken tespit → yanlış müşteriye "kargolandı" e-postası.
+  fulfilled işaretlenir ve müşteriye **kargo bildirimi e-postası gider**.
+  ⚠️ **Scope tuzağı (üretimde yaşandı, #966695)**: fulfillment için **`write_orders`
+  YETMEZ** — ayrı **fulfillment-order** scope'ları gerekir:
+  `read_merchant_managed_fulfillment_orders` + `write_merchant_managed_fulfillment_orders`.
+  Eksikse `userErrors`/hata DEĞİL **sessiz atlama** olur: `Order.fulfillmentOrders`
+  scope'a göre filtrelenip boş döner, not/metafield yazılır ama sipariş fulfilled
+  OLMAZ. Belirti: logda "Fulfill atlandı: ... UNFULFILLED ama açık fulfillment order
+  görünmüyor — scope EKSİK olabilir" uyarısı. Çözüm: scope'ları ekle, app'i yeniden
+  yetkilendir. ⚠️ Risk: yanlış/erken tespit → yanlış müşteriye "kargolandı" e-postası.
   `notify_customer: false` (e-posta gitmez, içeride fulfilled olur) ya da
   `fulfill_order: false` (tamamen kapalı) ile kademeli aç. Go-live öncesi test
   mağazasında doğrula. Tek koruma: `paddle_min_confidence` + zorunlu `#` regex.

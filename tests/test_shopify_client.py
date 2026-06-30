@@ -374,6 +374,23 @@ def test_fulfill_order_already_fulfilled_is_idempotent(client, monkeypatch):
     assert not any("fulfillmentCreate" in q for q in calls)
 
 
+def test_fulfill_order_unfulfilled_but_empty_warns_scope(client, monkeypatch, caplog):
+    """UNFULFILLED ama liste boş → muhtemel scope eksikliği; warning basılır, False döner."""
+    monkeypatch.setattr(
+        client,
+        "_graphql",
+        lambda *a, **k: {
+            "order": {
+                "displayFulfillmentStatus": "UNFULFILLED",
+                "fulfillmentOrders": {"edges": []},
+            }
+        },
+    )
+    with caplog.at_level("WARNING", logger="packing.shopify"):
+        assert client.fulfill_order("gid://shopify/Order/966695") is False
+    assert any("scope" in r.message.lower() for r in caplog.records)
+
+
 def test_fulfill_order_user_errors_raise(client, monkeypatch):
     def fake_graphql(query, variables, **k):
         if "fulfillmentOrders" in query:

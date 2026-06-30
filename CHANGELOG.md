@@ -7,6 +7,11 @@ Format [Keep a Changelog](https://keepachangelog.com/) temellidir ve proje
 ## [Unreleased]
 
 ### Eklendi
+- **Scope doğrulama scripti** (`scripts/check_shopify_scopes.py`): canlı Shopify
+  token'ının GERÇEK scope listesini (`currentAppInstallation.accessScopes`) çeker ve
+  fulfillment için gereken `read/write_merchant_managed_fulfillment_orders`
+  scope'larının eksik olup olmadığını işaretler. "Fulfillment çalışmıyor" teşhisinde
+  ilk adım — `write_orders` tek başına fulfillment'ı kapsamaz.
 - **Siparişi otomatik fulfilled işaretleme** (`shopify.fulfill_order`, varsayılan
   açık): paketleme tespit edilip metafield yazıldıktan sonra sipariş Shopify'da
   **FULFILLED (kargolandı)** olarak işaretlenir. Açık (OPEN) fulfillment order'lar
@@ -64,6 +69,15 @@ Format [Keep a Changelog](https://keepachangelog.com/) temellidir ve proje
   (0.80) + zorunlu `#` regex + `dedup_mode: daily`. (`config/config.yaml`)
 
 ### Düzeltildi
+- **Otomatik fulfillment sessizce atlanıyordu (scope eksikliği)** (üretimde #966695):
+  not/metafield yazılıyor ama sipariş fulfilled olmuyordu. Sebep: `fulfillmentCreate`
+  `write_orders` DEĞİL ayrı **fulfillment-order** scope'larını ister
+  (`read/write_merchant_managed_fulfillment_orders`); eksikken `Order.fulfillmentOrders`
+  scope'a göre filtrelenip boş döndüğü için `fulfill_order` hata değil sessizce `False`
+  üretiyordu. Çözüm operasyonel (app'e scope ekle + yeniden yetkilendir); kodda artık
+  durum UNFULFILLED iken liste boşsa scope eksikliğini işaret eden `warning` basılır.
+  Dokümanlar (README/CLAUDE/DEPLOYMENT) yanlış "`write_orders` yeter" ifadesinden
+  düzeltildi.
 - **Metafield Shopify panelinde görünmüyordu — tanımlı+pinli alana yazılıyor**
   (`shopify.metafield_namespace` + yeni `shopify.metafield_key`): eskiden metafield
   `packing` namespace'ine ve her tespitte FARKLI bir key'e (`event_<timestamp>`)
