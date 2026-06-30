@@ -40,6 +40,7 @@ RUN pip install --no-cache-dir paddlepaddle==2.6.2 paddleocr==2.7.3 \
 
 COPY app/ ./app/
 COPY models/ ./models/
+COPY scripts/ ./scripts/
 COPY VERSION ./VERSION
 
 # config, data ve logs runtime'da volume olarak bağlanır

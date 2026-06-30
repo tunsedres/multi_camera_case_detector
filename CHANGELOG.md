@@ -69,6 +69,10 @@ Format [Keep a Changelog](https://keepachangelog.com/) temellidir ve proje
   (0.80) + zorunlu `#` regex + `dedup_mode: daily`. (`config/config.yaml`)
 
 ### Düzeltildi
+- **`scripts/` dizini Docker image'ına kopyalanmıyordu**: Dockerfile yalnızca
+  `app/`, `models/`, `VERSION` kopyalıyordu → `scripts/check_shopify_scopes.py` gibi
+  yardımcı scriptler konteynerde yoktu (`docker exec ... python scripts/...` →
+  "No such file or directory"). `COPY scripts/ ./scripts/` eklendi.
 - **Otomatik fulfillment sessizce atlanıyordu (scope eksikliği)** (üretimde #966695):
   not/metafield yazılıyor ama sipariş fulfilled olmuyordu. Sebep: `fulfillmentCreate`
   `write_orders` DEĞİL ayrı **fulfillment-order** scope'larını ister
