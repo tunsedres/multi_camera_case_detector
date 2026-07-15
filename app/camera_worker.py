@@ -18,17 +18,23 @@ import time
 from collections.abc import Callable
 from datetime import datetime
 
-import cv2
-import numpy as np
-
-from app.detection.types import BarcodeResult
-from app.monitoring.health import HealthRegistry
-
-# OpenCV FFmpeg backend için TCP transport — cv2 ilk kullanılmadan set edilmeli
-os.environ.setdefault(
+# OpenCV FFmpeg backend'i bu değişkeni `import cv2` anında okur; bu yüzden satır
+# cv2 import'undan ÖNCE olmak ZORUNDA (aşağıdaki E402 bunun için bilinçli).
+# UDP'de paket kaybı bozuk NAL unit üretir (log: "bad cseq", "Could not find ref
+# with POC", "cu_qp_delta ... outside valid range") → kare düşer, tespit kaçar.
+# stimeout FFmpeg 5.0'da timeout oldu; bilinmeyen opsiyon sessizce yoksayıldığı
+# için ikisi de veriliyor (hangi sürüm olursa olsun doğru olan tutar).
+# Asıl ayar docker-compose.yml'de; burası konteyner dışı çalıştırma için yedek.
+os.environ.setdefault(  # noqa: E402
     "OPENCV_FFMPEG_CAPTURE_OPTIONS",
-    "rtsp_transport;tcp|stimeout;5000000|max_delay;500000",
+    "rtsp_transport;tcp|stimeout;5000000|timeout;5000000|max_delay;500000",
 )
+
+import cv2  # noqa: E402
+import numpy as np  # noqa: E402
+
+from app.detection.types import BarcodeResult  # noqa: E402
+from app.monitoring.health import HealthRegistry  # noqa: E402
 
 logger = logging.getLogger("packing.worker")
 

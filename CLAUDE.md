@@ -104,6 +104,18 @@ Worker'lar daemon thread; web sunucusu ana thread'i bloklar ve sinyalleri yönet
   düşer) ama BELLEĞİ çözmez (ölçümle doğrulandı). `docker-compose.yml` `mem_limit` son
   emniyet kemeri: restart yanlış ayarlansa bile HOST swap thrash'e düşmez (konteyner
   OOM-kill+restart). İleride: substream'e geçince per-frame native churn azalır.
+- **RTSP TCP zorlaması `docker-compose.yml`'de, Python'da DEĞİL** (`OPENCV_FFMPEG_CAPTURE_OPTIONS`):
+  OpenCV bu env'i **`import cv2` anında** FFmpeg backend'ini kurarken okur. Modül
+  seviyesinde `os.environ` yazmak, satır import'tan sonra kaldığı için sessizce
+  ETKİSİZ kalır → stream FFmpeg varsayılanı UDP'ye düşer (üretimde yaşandı).
+  UDP'de paket kaybı bozuk NAL unit üretir; belirti logda `RTP: bad cseq`,
+  `Could not find ref with POC N`, `cu_qp_delta ... outside the valid range` →
+  kare düşer, o karedeki tespit kaçar. Sinsi tarafı: `scripts/test_camera.py` env'i
+  cv2'den önce set ettiği için TESTTE TCP, ÜRETİMDE UDP çalışıyordu — "testte temiz,
+  sahada gürültülü" tablosu. Bu yüzden asıl ayar konteyner env'i (import sırasından
+  bağımsız); `camera_worker.py`'deki `setdefault` yalnızca konteyner dışı yedek ve
+  cv2 import'unun ÜSTÜNDE olmak zorunda (E402 bilinçli susturuldu — satırı aşağı
+  taşıma). `stimeout` FFmpeg 5.0'da `timeout` oldu; ikisi de veriliyor.
 - **Shopify GraphQL** (REST değil): REST Orders API deprecate ediliyor.
   Public arayüz (`ShopifyClient`, `OrderNotFound`, `ShopifyError`) REST'ten miras.
 - **Siparişi fulfill etme — fulfillment order üzerinden** (`shopify.fulfill_order`):

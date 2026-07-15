@@ -17,6 +17,12 @@ services:
       - ./logs:/app/logs
     environment:
       - TZ=Europe/Istanbul
+      # RTSP'yi TCP'ye zorla. UDP (FFmpeg varsayılanı) paket kaybında bozuk NAL
+      # unit üretir → decoder çöp okur, kare düşer, o karedeki tespit kaçar.
+      # Python tarafında set etmek güvenilmez (cv2 import'undan önce olmalı), bu
+      # yüzden ASIL ayar burası. Değiştirirken app/camera_worker.py'deki yedek
+      # setdefault ile tutarlı tut.
+      - OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp|stimeout;5000000|timeout;5000000|max_delay;500000
     # EMNİYET KEMERİ: konteyner bellek tavanı. Bir bellek büyümesi olursa konteyner
     # OOM-kill olur ve 'restart: unless-stopped' geri getirir — HOST (15.6 GB) asla
     # swap thrash'e düşmez. 15.6 GB host'ta 10 GB güvenli üst sınır (panel+OS'a yer

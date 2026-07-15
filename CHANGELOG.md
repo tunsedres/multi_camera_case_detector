@@ -6,6 +6,21 @@ Format [Keep a Changelog](https://keepachangelog.com/) temellidir ve proje
 
 ## [Unreleased]
 
+### Düzeltildi
+- **RTSP gerçekte UDP'den okunuyordu (TCP zannedilirken)**: `camera_worker.py`
+  `OPENCV_FFMPEG_CAPTURE_OPTIONS`'ı set ediyordu ama satır `import cv2`'den SONRA
+  geliyordu. OpenCV bu değişkeni FFmpeg backend'ini kurarken (`import cv2` anında)
+  okur → ayar hiç uygulanmıyor, stream FFmpeg varsayılanı olan UDP'ye düşüyordu.
+  Belirti: logda sürekli `RTP: PT=60: bad cseq`, `Could not find ref with POC N`,
+  `cu_qp_delta ... outside the valid range` (paket kaybı → bozuk NAL unit → decoder
+  çöp okur, kare düşer, o karedeki tespit kaçar). `scripts/test_camera.py` doğru
+  sırayla set ettiği için testte TCP, üretimde UDP çalışıyordu.
+  Düzeltme: (1) ASIL ayar artık `docker-compose.yml` `environment` bloğunda —
+  Python import sırasından bağımsız; (2) `camera_worker.py`'de env satırı cv2
+  import'unun üstüne alındı (konteyner dışı çalıştırma için yedek).
+  Ayrıca `stimeout` FFmpeg 5.0'da `timeout` olarak yeniden adlandırıldığı için
+  ikisi de veriliyor (bilinmeyen opsiyon sessizce yoksayılır).
+
 ### Eklendi
 - **`test_shopify.py --fulfill` bayrağı**: kameradan bağımsız, mesai dışında
   fulfillment'ı gerçek bir siparişte test etmek için. Varsayılan olarak müşteriye

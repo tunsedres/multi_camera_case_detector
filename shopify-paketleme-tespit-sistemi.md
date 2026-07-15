@@ -289,15 +289,22 @@ Her tespit anında o frame JPEG olarak kaydediliyor:
 
 ### Karar 7: TCP Transport (UDP Yerine)
 
-RTSP için TCP transport zorunlu kılındı:
+RTSP için TCP transport zorunlu kılındı. Ayar **konteyner env'i** olarak verilir
+(`docker-compose.yml`), Python'dan değil:
 
-```python
-OPENCV_FFMPEG_CAPTURE_OPTIONS = "rtsp_transport;tcp|stimeout;5000000"
+```yaml
+environment:
+  - OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp|stimeout;5000000|timeout;5000000|max_delay;500000
 ```
 
 - UDP daha hızlı ama paket kaybına duyarlı
 - TCP biraz daha yüksek gecikme ama paket kaybı yok
 - Bizim için gecikme önemli değil, doğruluk önemli
+- **Neden Python'da değil**: OpenCV bu env'i `import cv2` anında okur; modül
+  seviyesinde `os.environ` yazmak import'tan sonra kalırsa sessizce etkisizdir
+  ve stream UDP'ye düşer (üretimde yaşandı, bkz. CLAUDE.md ilgili karar maddesi)
+- `stimeout` FFmpeg 5.0'da `timeout` oldu; bilinmeyen opsiyon yoksayıldığı için
+  ikisi birden verilir
 
 ### Karar 8: Order Note + Metafield (İkisi Birden)
 
