@@ -72,7 +72,7 @@ shopify:
   # Paketleme tespit edilince siparişi Shopify'da FULFILLED (kargolandı) işaretle.
   # Açık (OPEN) fulfillment order'lar tüm kalemleriyle fulfill edilir; zaten fulfilled
   # sipariş hata vermez (idempotent — tekrar tespitte sessizce atlanır).
-  fulfill_order: true
+  fulfill_order: false
   # fulfill_order açıkken müşteriye Shopify KARGO BİLDİRİMİ e-postası gönderilsin mi.
   # true: kamera etiketi gördüğü an müşteriye "siparişiniz kargolandı" e-postası gider.
   # Paketleme == kargolama DEĞİLSE false yap (sipariş içeride fulfilled olur, e-posta gitmez).

@@ -108,9 +108,13 @@ Worker'lar daemon thread; web sunucusu ana thread'i bloklar ve sinyalleri yönet
   OpenCV bu env'i **`import cv2` anında** FFmpeg backend'ini kurarken okur. Modül
   seviyesinde `os.environ` yazmak, satır import'tan sonra kaldığı için sessizce
   ETKİSİZ kalır → stream FFmpeg varsayılanı UDP'ye düşer (üretimde yaşandı).
-  UDP'de paket kaybı bozuk NAL unit üretir; belirti logda `RTP: bad cseq`,
-  `Could not find ref with POC N`, `cu_qp_delta ... outside the valid range` →
-  kare düşer, o karedeki tespit kaçar. Sinsi tarafı: `scripts/test_camera.py` env'i
+  UDP'de paket kaybı bozuk NAL unit üretir; belirti logda `RTP: bad cseq` (RTP
+  sequence gap — TCP'de ÇIKMAZ, transport'un gerçekte ne olduğunun tek güvenilir
+  göstergesi) ve buna bağlı `cu_qp_delta ... outside the valid range` → kare düşer.
+  **`Could not find ref with POC N` bu tabloya AİT DEĞİL**: her bağlantıda ~1 kez
+  çıkar (decoder stream ortasından girince ilk keyframe'e kadar referans bulamaz),
+  TCP'de de çıkar, zararsızdır — transport teşhisinde bu satıra BAKMA (2026-07
+  yanlış teşhize yol açtı). Sinsi tarafı: `scripts/test_camera.py` env'i
   cv2'den önce set ettiği için TESTTE TCP, ÜRETİMDE UDP çalışıyordu — "testte temiz,
   sahada gürültülü" tablosu. Bu yüzden asıl ayar konteyner env'i (import sırasından
   bağımsız); `camera_worker.py`'deki `setdefault` yalnızca konteyner dışı yedek ve

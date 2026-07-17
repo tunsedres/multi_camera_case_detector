@@ -11,15 +11,21 @@ Format [Keep a Changelog](https://keepachangelog.com/) temellidir ve proje
   `OPENCV_FFMPEG_CAPTURE_OPTIONS`'ı set ediyordu ama satır `import cv2`'den SONRA
   geliyordu. OpenCV bu değişkeni FFmpeg backend'ini kurarken (`import cv2` anında)
   okur → ayar hiç uygulanmıyor, stream FFmpeg varsayılanı olan UDP'ye düşüyordu.
-  Belirti: logda sürekli `RTP: PT=60: bad cseq`, `Could not find ref with POC N`,
-  `cu_qp_delta ... outside the valid range` (paket kaybı → bozuk NAL unit → decoder
-  çöp okur, kare düşer, o karedeki tespit kaçar). `scripts/test_camera.py` doğru
-  sırayla set ettiği için testte TCP, üretimde UDP çalışıyordu.
+  `scripts/test_camera.py` doğru sırayla set ettiği için testte TCP, üretimde UDP
+  çalışıyordu. Belirti: logda `RTP: PT=60: bad cseq` (RTP sequence gap = paket
+  kaybı; TCP'de bu satır ÇIKMAZ) ve buna bağlı `cu_qp_delta ... outside the valid
+  range` (kayıp paket → bozuk NAL unit → decoder çöp okur, kare düşer).
   Düzeltme: (1) ASIL ayar artık `docker-compose.yml` `environment` bloğunda —
   Python import sırasından bağımsız; (2) `camera_worker.py`'de env satırı cv2
   import'unun üstüne alındı (konteyner dışı çalıştırma için yedek).
   Ayrıca `stimeout` FFmpeg 5.0'da `timeout` olarak yeniden adlandırıldığı için
   ikisi de veriliyor (bilinmeyen opsiyon sessizce yoksayılır).
+  Doğrulandı: `docker compose exec ... printenv | grep OPENCV` değeri gösteriyor;
+  `ffmpeg -rtsp_transport tcp` ile 10 sn/250 kare, sıfır `bad cseq`.
+  **NOT — `Could not find ref with POC N` bu düzeltmeyle İLGİSİZ ve normaldir**:
+  stream ortasından bağlanan decoder ilk keyframe'e kadar geçmiş referans kareleri
+  arar, bulamaz, sonra toparlar. Bağlantı başına ~1 kez çıkar (her `✓ Bağlandı`
+  sonrası), TCP'de de çıkar. Log gürültüsüdür, kovalanmamalı.
 
 ### Eklendi
 - **`test_shopify.py --fulfill` bayrağı**: kameradan bağımsız, mesai dışında
@@ -75,6 +81,12 @@ Format [Keep a Changelog](https://keepachangelog.com/) temellidir ve proje
   `.md` dosyalarını da güncellemeli
 
 ### Değiştirildi
+- **Otomatik fulfill kapatıldı** (`config/config.yaml` `shopify.fulfill_order`
+  true→false): paketleme tespitinde sipariş artık Shopify'da FULFILLED
+  işaretlenmiyor, yalnızca metafield'e kayıt düşülüyor. `notify_customer` zaten
+  yalnızca `fulfill_order` açıkken devreye girdiği için müşteriye kargo bildirimi
+  e-postası da gitmiyor. Kod değişmedi; ayar boot'ta okunduğu için etkin olması
+  için yeniden başlatma gerekir.
 - **Çoklu-kare oylama kapatıldı + frame throughput artırıldı** — yoğun saatte
   atlanan siparişler (`detection.min_votes` 3→1, `target_fps` 1→2, `paddle_pool_size`
   2→3): üretimde 26 Haziran 23:25–23:38 penceresinde ~64 siparişlik aralıktan yalnız

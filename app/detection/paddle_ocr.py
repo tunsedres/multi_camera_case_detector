@@ -62,9 +62,12 @@ class PaddleEnginePool:
     def _make_engine(self):
         from paddleocr import PaddleOCR
 
+        # _created çağıran (_acquire) tarafından ZATEN artırıldı → burada +1 EKLEME.
+        # Eklenirse log "4/3" gibi sınır aşılmış izlenimi verir (2026-07'de yanlış
+        # "havuz sızdırıyor" teşhisine yol açtı); sınır _acquire'da lock altında.
         logger.info(
             "PaddleOCR motoru kuruluyor (%s/%s, offline: %s)",
-            self._created + 1,
+            self._created,
             self.size,
             self.model_root,
         )
